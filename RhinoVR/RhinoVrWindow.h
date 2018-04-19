@@ -95,6 +95,7 @@ class RhinoVrDeviceController
 {
 public:
   bool m_top_button_pressed = false;
+  bool m_grip_button_pressed = false;
   bool m_trigger_pressed = false;
 };
 
@@ -164,6 +165,10 @@ protected:
 
   ON_Xform m_clip_to_left_eye;
   ON_Xform m_clip_to_right_eye;
+
+  ON_3dVector m_camera_translation;
+  double m_camera_rotation;
+  ON_3dVector m_previous_cam_dir;
 
   ON_Viewport m_vp_orig;
   ON_Viewport m_vp_orig_vr_frus;

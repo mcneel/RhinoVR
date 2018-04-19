@@ -22,8 +22,11 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn, unsi
   , m_mat4ProjectionRight(ON_Xform::IdentityTransformation)
   , m_mat4HMDPose(ON_Xform::IdentityTransformation)
   , m_mat4HMDPoseCorrection(ON_Xform::IdentityTransformation)
+  , m_camera_translation(ON_3dVector::ZeroVector)
   , m_pointer_line(ON_3dPoint(0, 0, -0.02f), ON_3dPoint(0, 0, -15.0f))
   , m_trigger_value(0.0f)
+  , m_previous_cam_dir(ON_3dVector::UnsetVector)
+  , m_camera_rotation(0.0)
 {
   memset(m_rDevClassChar, 0, sizeof(m_rDevClassChar));
   memset(m_rbShowTrackedDevice, 0, sizeof(m_rbShowTrackedDevice));
@@ -260,6 +263,8 @@ void RhinoVrRenderer::UpdateDeviceState(const ON_Xform& device_to_world)
   }
 }
 
+bool IsKeyPressed(int uKey) { return ((::GetAsyncKeyState(uKey) & 0x8000) == 0x8000); }
+
 void RhinoVrRenderer::UpdateState()
 {
   CRhinoView* rhino_view = CRhinoView::FromRuntimeSerialNumber(m_vr_view_sn);
@@ -272,8 +277,24 @@ void RhinoVrRenderer::UpdateState()
 
   UpdateHMDMatrixPose();
 
+  if (IsKeyPressed(VK_UP) && m_previous_cam_dir != ON_3dVector::UnsetVector)
+  {
+    m_camera_translation = m_camera_translation + 0.5*m_previous_cam_dir;
+  }
+  if (IsKeyPressed(VK_DOWN) && m_previous_cam_dir != ON_3dVector::UnsetVector)
+  {
+    m_camera_translation = m_camera_translation - 0.5*m_previous_cam_dir;
+  }
+  if (IsKeyPressed(VK_LEFT))
+  {
+    m_camera_rotation = m_camera_rotation + 9.0*ON_DEGREES_TO_RADIANS;
+  }
+  if (IsKeyPressed(VK_RIGHT))
+  {
+    m_camera_rotation = m_camera_rotation - 9.0*ON_DEGREES_TO_RADIANS;
+  }
+
   const ON_Viewport& rhino_vp = rhino_view->ActiveViewport().VP();
-//  m_vp_orig = vr_vp->VP();
 
   ON_Viewport vp = m_vp_orig_vr_frus;
   vp.SetProjection(rhino_vp.Projection());
@@ -283,6 +304,10 @@ void RhinoVrRenderer::UpdateState()
   vp.SetTargetPoint(rhino_vp.TargetPoint());
   vp.SetFrustumNearFar(m_fNearClip, m_fFarClip);
 
+  vp.DollyCamera(m_camera_translation);
+  vp.DollyFrustum(m_camera_translation.z);
+  vp.Rotate(m_camera_rotation, ON_3dVector::ZAxis, vp.CameraLocation());
+
   vp.GetXform(ON::coordinate_system::camera_cs, ON::coordinate_system::world_cs, m_cam_to_world);
   vp.GetXform(ON::coordinate_system::world_cs, ON::coordinate_system::camera_cs, m_world_to_cam);
 
@@ -290,12 +315,8 @@ void RhinoVrRenderer::UpdateState()
   ON_Xform cam_to_hmd_xform = m_cam_to_world * m_mat4HMDPose * m_world_to_cam;
 
   m_vp_hmd.Transform(cam_to_hmd_xform);
-  //m_vp_hmd.SetFrustumLeftRightSymmetry(false);
-  //m_vp_hmd.SetFrustumTopBottomSymmetry(false);
-  //m_vp_hmd.SetFrustum(
-  //  m_left_frus_left, m_right_frus_right,
-  //  m_left_frus_top, m_left_frus_bottom,
-  //  m_fNearClip, m_fFarClip);
+
+  m_previous_cam_dir = m_vp_hmd.CameraDirection().UnitVector();
 
   // By default, the view is set to the HMD viewport.
   vr_vp->SetVP(m_vp_hmd, TRUE);
@@ -605,6 +626,24 @@ void RhinoVrRenderer::HandleInput()
         {
           controller.m_top_button_pressed = true;
           RhinoApp().ExecuteCommand(m_vr_doc_sn, L"Move");
+        }
+      }
+
+      if (controller.m_grip_button_pressed)
+      {
+        auto grip_button_check = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_Grip);
+        if ((state.ulButtonPressed & grip_button_check) == 0)
+        {
+          controller.m_grip_button_pressed = false;
+        }
+      }
+      else
+      {
+        auto grip_button_check = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_Grip);
+        if (state.ulButtonPressed & grip_button_check)
+        {
+          controller.m_grip_button_pressed = true;
+          RhinoApp().ExecuteCommand(m_vr_doc_sn, L"_Enter");
         }
       }
 

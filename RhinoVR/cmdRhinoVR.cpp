@@ -52,14 +52,14 @@ void RhinoVrUpdate()
 
 }
 
-const int vr_view_width = 1512;
-const int vr_view_height = 1680;
+//const int vr_view_width = 1512;
+//const int vr_view_height = 1680;
 
 //const int vr_view_width = 1512/2;
 //const int vr_view_height = 1680/2;
 
-//const int vr_view_width = 1080;
-//const int vr_view_height = 1200;
+const int vr_view_width = 1080;
+const int vr_view_height = 1200;
 
 CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& context)
 {
