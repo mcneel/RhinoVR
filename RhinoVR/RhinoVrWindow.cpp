@@ -23,10 +23,12 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn, unsi
   , m_mat4HMDPose(ON_Xform::IdentityTransformation)
   , m_mat4HMDPoseCorrection(ON_Xform::IdentityTransformation)
   , m_camera_translation(ON_3dVector::ZeroVector)
-  , m_pointer_line(ON_3dPoint(0, 0, -0.02f), ON_3dPoint(0, 0, -15.0f))
+  , m_pointer_line(ON_3dPoint(0, 0, 0), ON_3dPoint(0, 0, -1))
   , m_trigger_value(0.0f)
   , m_previous_cam_dir(ON_3dVector::UnsetVector)
   , m_camera_rotation(0.0)
+  , m_hmd_pose_correction_acquired(false)
+  , m_unit_scale(1.0)
 {
   memset(m_rDevClassChar, 0, sizeof(m_rDevClassChar));
   memset(m_rbShowTrackedDevice, 0, sizeof(m_rbShowTrackedDevice));
@@ -117,7 +119,7 @@ RhinoVrDeviceModel* RhinoVrRenderer::FindOrLoadRenderModel(const char* pchRender
     }
 
     pRenderModel = new RhinoVrDeviceModel(pchRenderModelName);
-    if (!pRenderModel->Init(*pModel, *pTexture))
+    if (!pRenderModel->Init(*pModel, *pTexture, m_unit_scale))
     {
       RhinoApp().Print("Unable to create Rhino Mesh model from render model %s\n", pchRenderModelName);
       delete pRenderModel;
@@ -150,7 +152,11 @@ void RhinoVrRenderer::SetupRenderModelForTrackedDevice(vr::TrackedDeviceIndex_t 
   else
   {
     m_rTrackedDeviceToRenderModel[unTrackedDeviceIndex] = pRenderModel;
-    m_rbShowTrackedDevice[unTrackedDeviceIndex] = true;
+
+    if (!sRenderModelName.EqualOrdinal("lh_basestation_vive", false))
+    {
+      m_rbShowTrackedDevice[unTrackedDeviceIndex] = true;
+    }
   }
 }
 
@@ -248,19 +254,19 @@ void RhinoVrRenderer::UpdateDeviceState(const ON_Xform& device_to_world)
     }
   }
 
-  m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_area_mesh_left, vr::Eye_Left);
-  m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_area_mesh_right, vr::Eye_Right);
+  //m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_area_mesh_left, vr::Eye_Left);
+  //m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_area_mesh_right, vr::Eye_Right);
 
-  m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(m_clip_to_left_eye, vr::Eye_Left);
-  m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(m_clip_to_right_eye, vr::Eye_Right);
+  //m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(m_clip_to_left_eye, vr::Eye_Left);
+  //m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(m_clip_to_right_eye, vr::Eye_Right);
 
-  m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_area_mesh_left_cache_handle, vr::Eye_Left);
-  m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_area_mesh_right_cache_handle, vr::Eye_Right);
+  //m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_area_mesh_left_cache_handle, vr::Eye_Left);
+  //m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_area_mesh_right_cache_handle, vr::Eye_Right);
 
-  if (!m_hidden_mesh_display_conduit.IsEnabled())
-  {
-    m_hidden_mesh_display_conduit.Enable(m_vr_doc_sn);
-  }
+  //if (!m_hidden_mesh_display_conduit.IsEnabled())
+  //{
+  //  m_hidden_mesh_display_conduit.Enable(m_vr_doc_sn);
+  //}
 }
 
 bool IsKeyPressed(int uKey) { return ((::GetAsyncKeyState(uKey) & 0x8000) == 0x8000); }
@@ -277,22 +283,54 @@ void RhinoVrRenderer::UpdateState()
 
   UpdateHMDMatrixPose();
 
-  if (IsKeyPressed(VK_UP) && m_previous_cam_dir != ON_3dVector::UnsetVector)
+  if (m_trackpad_point != ON_2dPoint::UnsetPoint)
   {
-    m_camera_translation = m_camera_translation + 0.5*m_previous_cam_dir;
+    CRhinoDoc* rhino_doc = CRhinoDoc::FromRuntimeSerialNumber(m_vr_doc_sn);
+    if (rhino_doc)
+    {
+      if (!rhino_doc->InCommand())
+      {
+        double x = m_trackpad_point.x;
+        double x_sign = (x >= 0.0 ? 1.0 : -1.0);
+
+        if (abs(x) >= 0.4)
+        {
+          double x_scaled = x_sign * (abs(x) - 0.4)*(1.0 / 0.6);
+          m_camera_rotation = m_camera_rotation - 2.0*x_scaled*ON_DEGREES_TO_RADIANS;
+        }
+
+        double y = m_trackpad_point.y;
+        double y_sign = (y >= 0.0 ? 1.0 : -1.0);
+
+        if (abs(y) >= 0.4)
+        {
+          double y_scaled = y_sign * (abs(y) - 0.4)*(1.0 / 0.6);
+
+          if (m_previous_cam_dir != ON_3dVector::UnsetVector)
+          {
+            m_camera_translation = m_camera_translation + 0.25*y_scaled*m_previous_cam_dir*m_unit_scale;
+          }
+        }
+      }
+    }
   }
-  if (IsKeyPressed(VK_DOWN) && m_previous_cam_dir != ON_3dVector::UnsetVector)
-  {
-    m_camera_translation = m_camera_translation - 0.5*m_previous_cam_dir;
-  }
-  if (IsKeyPressed(VK_LEFT))
-  {
-    m_camera_rotation = m_camera_rotation + 9.0*ON_DEGREES_TO_RADIANS;
-  }
-  if (IsKeyPressed(VK_RIGHT))
-  {
-    m_camera_rotation = m_camera_rotation - 9.0*ON_DEGREES_TO_RADIANS;
-  }
+
+  //if (IsKeyPressed(VK_UP) && m_previous_cam_dir != ON_3dVector::UnsetVector)
+  //{
+  //  m_camera_translation = m_camera_translation + 0.5*m_previous_cam_dir*m_unit_scale;
+  //}
+  //if (IsKeyPressed(VK_DOWN) && m_previous_cam_dir != ON_3dVector::UnsetVector)
+  //{
+  //  m_camera_translation = m_camera_translation - 0.5*m_previous_cam_dir*m_unit_scale;
+  //}
+  //if (IsKeyPressed(VK_LEFT))
+  //{
+  //  m_camera_rotation = m_camera_rotation + 9.0*ON_DEGREES_TO_RADIANS;
+  //}
+  //if (IsKeyPressed(VK_RIGHT))
+  //{
+  //  m_camera_rotation = m_camera_rotation - 9.0*ON_DEGREES_TO_RADIANS;
+  //}
 
   const ON_Viewport& rhino_vp = rhino_view->ActiveViewport().VP();
 
@@ -572,6 +610,10 @@ bool RhinoVrRenderer::GetWorldPickLineAndClipRegion(const ON_Xform& device_xform
 
   line_vp.SetScreenPort(l, r, b, t);
 
+  double near_dist = line_vp.FrustumNear();
+  double far_dist = line_vp.FrustumFar();
+  line_vp.SetFrustumNearFar(near_dist, near_dist + m_pointer_line.Length());
+
   line_pixel = ON_2iPoint(line_vp.ScreenPortWidth() / 2 + 1, line_vp.ScreenPortHeight() / 2 + 1);
 
   vr_vp->SetVP(line_vp, TRUE);
@@ -611,6 +653,125 @@ void RhinoVrRenderer::HandleInput()
       //  break;
       //}
 
+      if (controller.m_touchpad_button_pressed)
+      {
+        auto touch_button_check = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_SteamVR_Touchpad);
+        if ((state.ulButtonPressed & touch_button_check) == 0)
+        {
+          controller.m_touchpad_button_pressed = false;
+        }
+      }
+      else
+      {
+        auto touch_button_check = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_SteamVR_Touchpad);
+        if (state.ulButtonPressed & touch_button_check)
+        {
+          controller.m_touchpad_button_pressed = true;
+
+          CRhinoDoc* rhino_doc = CRhinoDoc::FromRuntimeSerialNumber(m_vr_doc_sn);
+          CRhinoView* rhino_view = CRhinoView::FromRuntimeSerialNumber(m_vr_view_sn);
+
+          if (rhino_doc && rhino_view)
+          {
+            if (rhino_doc->InGetPoint())
+            {
+              CRhinoGetPoint* gp = rhino_doc->InGetPoint();
+
+              ON_Line world_line;
+              ON_ClippingRegion clip_region;
+              ON_Viewport line_vp;
+              ON_2iPoint line_pixel;
+
+              if (GetWorldPickLineAndClipRegion(m_rmat4DevicePose[unDevice], world_line, clip_region, line_vp, line_pixel))
+              {
+                LPARAM nFlags = 0;
+                ON_3dPoint screen_pt = ON_3dPoint::Origin;
+
+                ON_3dPoint world_point;
+                if (gp->GetView3dPoint(1, *rhino_view, nFlags, screen_pt, world_line, world_point))
+                {
+                  ON_3dRay ray;
+                  ray.m_P = world_point;
+                  ray.m_V = ON_3dVector::ZeroVector;
+
+                  LPARAM nFlags = 0; // MK_LBUTTON;
+
+                  RhinoVrPostDigitizerEvent(ray, nFlags);
+                }
+              }
+            }
+            else
+            {
+              ON_Viewport line_vp;
+              ON_2iPoint line_pixel;
+
+              CRhinoPickContext pc;
+              pc.m_view = rhino_view;
+              pc.m_pick_mode = CRhinoPickContext::shaded_pick;
+              pc.m_pick_style = CRhinoPickContext::point_pick;
+
+              if (GetWorldPickLineAndClipRegion(m_rmat4DevicePose[unDevice], pc.m_pick_line, pc.m_pick_region, line_vp, line_pixel))
+              {
+                pc.UpdateClippingPlanes();
+
+                //rhino_doc->AddCurveObject(pc.m_pick_line);
+
+                CRhinoObjRefArray rhino_objs;
+                rhino_doc->PickObjects(pc, rhino_objs);
+
+                rhino_objs.QuickSort(sort_objref_by_seldist);
+
+                if (rhino_objs.Count() > 0)
+                {
+                  CRhinoObjRef objref = rhino_objs[0];
+
+                  if (rhino_doc->InGetObject())
+                  {
+                    CRhinoGetObject* go = rhino_doc->InGetObject();
+                    CRhinoObjRefArray& obj_ref_array = const_cast<CRhinoObjRefArray&>(go->PickList());
+                    obj_ref_array.Append(objref);
+
+                    RhinoVrPostGetObjectEvent(go, rhino_view);
+
+                  }
+                  else if (rhino_doc->InGetPoint())
+                  {
+                    ON_3dPoint isect_pt;
+                    if (objref.SelectionPoint(isect_pt))
+                    {
+                      ON_3dRay ray;
+                      ray.m_P = isect_pt;
+                      ray.m_V = ON_3dVector::ZeroVector;
+
+                      LPARAM nFlags = 0; // MK_LBUTTON;
+
+                      RhinoVrPostDigitizerEvent(ray, nFlags);
+                    }
+                  }
+                  else
+                  {
+                    objref.Object()->Select();
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      auto tackpad_button_touch = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_SteamVR_Touchpad);
+      if (state.ulButtonTouched & tackpad_button_touch)
+      {
+        controller.m_touchpad_point.x = state.rAxis[0].x;
+        controller.m_touchpad_point.y = state.rAxis[0].y;
+
+        m_trackpad_point = controller.m_touchpad_point;
+      }
+      else
+      {
+        m_trackpad_point = controller.m_touchpad_point = ON_2dPoint::UnsetPoint;
+      }
+
       if (controller.m_top_button_pressed)
       {
         auto top_button_check = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_ApplicationMenu);
@@ -643,7 +804,6 @@ void RhinoVrRenderer::HandleInput()
         if (state.ulButtonPressed & grip_button_check)
         {
           controller.m_grip_button_pressed = true;
-          RhinoApp().ExecuteCommand(m_vr_doc_sn, L"_Enter");
         }
       }
 
@@ -660,92 +820,7 @@ void RhinoVrRenderer::HandleInput()
         {
           controller.m_trigger_pressed = true;
 
-          CRhinoDoc* rhino_doc = CRhinoDoc::FromRuntimeSerialNumber(m_vr_doc_sn);
-          CRhinoView* rhino_view = CRhinoView::FromRuntimeSerialNumber(m_vr_view_sn);
-
-          if (rhino_doc && rhino_view)
-          {
-            if (rhino_doc->InGetPoint())
-            {
-              CRhinoGetPoint* gp = rhino_doc->InGetPoint();
-
-              ON_Line world_line;
-              ON_ClippingRegion clip_region;
-              ON_Viewport line_vp;
-              ON_2iPoint line_pixel;
-
-              if (GetWorldPickLineAndClipRegion(m_rmat4DevicePose[unDevice], world_line, clip_region, line_vp, line_pixel))
-              {
-                LPARAM nFlags = 0;
-                ON_3dPoint screen_pt = ON_3dPoint::Origin;
-
-                ON_3dPoint world_point;
-                if (gp->GetView3dPoint(1, *rhino_view, nFlags, screen_pt, world_line, world_point))
-                {
-                  ON_3dRay ray;
-                  ray.m_P = world_point;
-                  ray.m_V = ON_3dVector::ZeroVector;
-
-                  LPARAM nFlags = 0; // MK_LBUTTON;
-
-                  RhinoVrPostDigitizerEvent(ray, nFlags);
-                  //RhinoApp().AppEventManager()->PostDigitizerPointEvent(ray, nFlags);
-                }
-              }
-            }
-            else
-            {
-              ON_Viewport line_vp;
-              ON_2iPoint line_pixel;
-
-              CRhinoPickContext pc;
-              pc.m_view = rhino_view;
-              pc.m_pick_mode = CRhinoPickContext::shaded_pick;
-              pc.m_pick_style = CRhinoPickContext::point_pick;
-
-              if (GetWorldPickLineAndClipRegion(m_rmat4DevicePose[unDevice], pc.m_pick_line, pc.m_pick_region, line_vp, line_pixel))
-              {
-                pc.UpdateClippingPlanes();
-
-                CRhinoObjRefArray rhino_objs;
-                rhino_doc->PickObjects(pc, rhino_objs);
-
-                rhino_objs.QuickSort(sort_objref_by_seldist);
-
-                if (rhino_objs.Count() > 0)
-                {
-                  CRhinoObjRef objref = rhino_objs[0];
-
-                  if (rhino_doc->InGetObject())
-                  {
-                    CRhinoGetObject* go = rhino_doc->InGetObject();
-                    CRhinoObjRefArray& obj_ref_array = const_cast<CRhinoObjRefArray&>(go->PickList());
-                    obj_ref_array.Append(objref);
-
-                    RhinoVrPostGetObjectEvent(go, rhino_view);
-                    //rhino_doc->EventManager()->PostGetObjectEvent(
-                    //  go, rhino_view, nullptr, nullptr, false, false);
-
-                  }
-                  else if (rhino_doc->InGetPoint())
-                  {
-                    ON_3dPoint isect_pt;
-                    if (objref.SelectionPoint(isect_pt))
-                    {
-                      ON_3dRay ray;
-                      ray.m_P = isect_pt;
-                      ray.m_V = ON_3dVector::ZeroVector;
-
-                      LPARAM nFlags = 0; // MK_LBUTTON;
-
-                      RhinoVrPostDigitizerEvent(ray, nFlags);
-                      //RhinoApp().AppEventManager()->PostDigitizerPointEvent(ray, nFlags);
-                    }
-                  }
-                }
-              }
-            }
-          }
+          RhinoApp().ExecuteCommand(m_vr_doc_sn, L"_Enter");
         }
         else
         {
@@ -838,17 +913,17 @@ ON_Xform RhinoVrRenderer::ConvertOpenVRMatrixToXform(const vr::HmdMatrix34_t &ma
   xform.m_xform[0][0] = mat.m[0][0];
   xform.m_xform[0][1] = mat.m[0][1];
   xform.m_xform[0][2] = mat.m[0][2];
-  xform.m_xform[0][3] = mat.m[0][3];
+  xform.m_xform[0][3] = mat.m[0][3] * m_unit_scale;
 
   xform.m_xform[1][0] = mat.m[1][0];
   xform.m_xform[1][1] = mat.m[1][1];
   xform.m_xform[1][2] = mat.m[1][2];
-  xform.m_xform[1][3] = mat.m[1][3];
+  xform.m_xform[1][3] = mat.m[1][3] * m_unit_scale;
 
   xform.m_xform[2][0] = mat.m[2][0];
   xform.m_xform[2][1] = mat.m[2][1];
   xform.m_xform[2][2] = mat.m[2][2];
-  xform.m_xform[2][3] = mat.m[2][3];
+  xform.m_xform[2][3] = mat.m[2][3] * m_unit_scale;
 
   xform.m_xform[3][0] = 0.0;
   xform.m_xform[3][1] = 0.0;
@@ -915,6 +990,14 @@ void RhinoVrRenderer::UpdateHMDMatrixPose()
 
   vr::VRCompositor()->WaitGetPoses(m_rTrackedDevicePose, vr::k_unMaxTrackedDeviceCount, nullptr, 0);
 
+  if (!m_hmd_pose_correction_acquired && m_rTrackedDevicePose[vr::k_unTrackedDeviceIndex_Hmd].bPoseIsValid)
+  {
+    m_hmd_pose_correction_acquired = true;
+
+    ON_Xform xform = ConvertOpenVRMatrixToXform(m_rTrackedDevicePose[vr::k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking);
+    m_mat4HMDPoseCorrection = ON_Xform::TranslationTransformation(ON_3dVector(-xform[0][3], -xform[1][3], -xform[2][3]));
+  }
+
   m_iValidPoseCount = 0;
   m_strPoseClasses = "";
   for (int nDevice = 0; nDevice < vr::k_unMaxTrackedDeviceCount; ++nDevice)
@@ -922,7 +1005,7 @@ void RhinoVrRenderer::UpdateHMDMatrixPose()
     if (m_rTrackedDevicePose[nDevice].bPoseIsValid)
     {
       m_iValidPoseCount++;
-      m_rmat4DevicePose[nDevice] = ConvertOpenVRMatrixToXform(m_rTrackedDevicePose[nDevice].mDeviceToAbsoluteTracking);
+      m_rmat4DevicePose[nDevice] = m_mat4HMDPoseCorrection * ConvertOpenVRMatrixToXform(m_rTrackedDevicePose[nDevice].mDeviceToAbsoluteTracking);
       if (m_rDevClassChar[nDevice] == 0)
       {
         switch (m_pHMD->GetTrackedDeviceClass(nDevice))
@@ -941,6 +1024,7 @@ void RhinoVrRenderer::UpdateHMDMatrixPose()
 
   if (m_rTrackedDevicePose[vr::k_unTrackedDeviceIndex_Hmd].bPoseIsValid)
   {
+
     m_mat4HMDPose = m_rmat4DevicePose[vr::k_unTrackedDeviceIndex_Hmd];
     m_mat4eyePosLeft = GetHMDMatrixPoseEye(vr::Eye_Left);
     m_mat4eyePosRight = GetHMDMatrixPoseEye(vr::Eye_Right);
@@ -975,6 +1059,14 @@ bool RhinoVrRenderer::InitializeVrSystem()
     //SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "VR_Init Failed", buf, NULL);
     return false;
   }
+
+  CRhinoDoc* rhino_doc = CRhinoDoc::FromRuntimeSerialNumber(m_vr_doc_sn);
+  if (rhino_doc)
+  {
+    m_unit_scale = rhino_doc->ModelUnits().MetersPerUnit();
+  }
+
+  m_pointer_line = ON_Line(m_unit_scale*ON_3dPoint(0, 0, -0.02f), m_unit_scale*ON_3dPoint(0, 0, -500.0f));
   
   uint32_t rec_width, rec_height;
   m_pHMD->GetRecommendedRenderTargetSize(&rec_width, &rec_height);
@@ -995,7 +1087,7 @@ bool RhinoVrRenderer::InitializeVrSystem()
   double l, r, b, t, n, f;
   vp.GetFrustum(&l, &r, &b, &t, &n, &f);
 
-  m_fNearClip = (float)0.01f;
+  m_fNearClip = (float)(m_unit_scale * 0.01);
   m_fFarClip = (float)(m_fNearClip / vp.PerspectiveMinNearOverFar());
 
   m_pHMD->GetProjectionRaw(vr::Eye_Left,
@@ -1041,8 +1133,8 @@ bool RhinoVrRenderer::InitializeVrSystem()
   rhino_view->ActiveViewport().SetVP(vp, TRUE);
   rhino_view->Redraw();
 
-  m_mat4eyePosLeft = GetHMDMatrixPoseEye(vr::Eye_Left);
-  m_mat4eyePosRight = GetHMDMatrixPoseEye(vr::Eye_Right);
+  //m_mat4eyePosLeft = GetHMDMatrixPoseEye(vr::Eye_Left);
+  //m_mat4eyePosRight = GetHMDMatrixPoseEye(vr::Eye_Right);
 
   SetupRenderModels();
 
@@ -1285,7 +1377,7 @@ RhinoVrDeviceModel::RhinoVrDeviceModel(const ON_String & sRenderModelName)
 {
 }
 
-bool RhinoVrDeviceModel::Init(const vr::RenderModel_t & vrModel, const vr::RenderModel_TextureMap_t & vrDiffuseTexture)
+bool RhinoVrDeviceModel::Init(const vr::RenderModel_t & vrModel, const vr::RenderModel_TextureMap_t & vrDiffuseTexture, double unit_scale)
 {
   m_device_mesh.Destroy();
   m_device_mesh.m_V.SetCapacity(vrModel.unVertexCount);
@@ -1300,7 +1392,7 @@ bool RhinoVrDeviceModel::Init(const vr::RenderModel_t & vrModel, const vr::Rende
   {
     const vr::RenderModel_Vertex_t& rm_vertex = vrModel.rVertexData[vi];
 
-    m_device_mesh.m_V[vi] = ON_3fPoint((const float*)(&rm_vertex.vPosition));
+    m_device_mesh.m_V[vi] = unit_scale * ON_3fPoint((const float*)(&rm_vertex.vPosition));
     m_device_mesh.m_N[vi] = ON_3fPoint((const float*)(&rm_vertex.vNormal));
     m_device_mesh.m_T[vi] = ON_2fPoint((const float*)(&rm_vertex.rfTextureCoord));
   }

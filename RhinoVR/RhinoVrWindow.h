@@ -58,13 +58,6 @@ public:
 private:
   unsigned int m_uiDocSerialNumber;
 
-  //double m_frus_near_suggestion;
-  //double m_frus_far_suggestion;
-
-  //ON_SimpleArray<ON_3dPoint> m_start_pts;
-  //ON_SimpleArray<ON_3dPoint> m_end_pts;
-  //ON_SimpleArray<ON_Color> m_colors;
-
   bool m_draw_hidden_area_mesh;
   vr::EVREye m_active_eye;
 
@@ -74,8 +67,6 @@ private:
   ON_Xform m_hidden_area_mesh_right_xform;
   CRhinoCacheHandle* m_hidden_area_mesh_left_cache_handle;
   CRhinoCacheHandle* m_hidden_area_mesh_right_cache_handle;
-
-  //ON_BoundingBox m_bounding_box;
 };
 
 class RhinoVrDeviceModel
@@ -83,7 +74,7 @@ class RhinoVrDeviceModel
 public:
   RhinoVrDeviceModel() = default;
   RhinoVrDeviceModel(const ON_String& sRenderModelName);
-  bool Init(const vr::RenderModel_t & vrModel, const vr::RenderModel_TextureMap_t & vrDiffuseTexture);
+  bool Init(const vr::RenderModel_t & vrModel, const vr::RenderModel_TextureMap_t & vrDiffuseTexture, double unit_scale);
   const ON_String& GetName() const;
 
   ON_String m_device_name;
@@ -94,9 +85,13 @@ public:
 class RhinoVrDeviceController
 {
 public:
+  bool m_touchpad_button_pressed = false;
   bool m_top_button_pressed = false;
   bool m_grip_button_pressed = false;
   bool m_trigger_pressed = false;
+
+  bool m_finger_on_touchpad = false;
+  ON_2dPoint m_touchpad_point = ON_2dPoint::Origin;
 };
 
 class RhinoVrRenderer
@@ -152,6 +147,8 @@ protected:
   float m_left_frus_left, m_left_frus_right, m_left_frus_top, m_left_frus_bottom;
   float m_right_frus_left, m_right_frus_right, m_right_frus_top, m_right_frus_bottom;
 
+  double m_unit_scale;
+
   ON_Xform m_mat4ProjectionLeft;
   ON_Xform m_mat4ProjectionRight;
   ON_Xform m_mat4eyePosLeft;
@@ -159,6 +156,8 @@ protected:
 
   ON_Xform m_mat4HMDPose;
   ON_Xform m_mat4HMDPoseCorrection;
+
+  bool m_hmd_pose_correction_acquired;
 
   ON_Xform m_cam_to_world;
   ON_Xform m_world_to_cam;
@@ -179,6 +178,7 @@ protected:
   ON_Line m_pointer_line;
 
   float m_trigger_value;
+  ON_2dPoint m_trackpad_point;
 
   vr::TrackedDevicePose_t m_rTrackedDevicePose[vr::k_unMaxTrackedDeviceCount];
   RhinoVrDeviceModel* m_rTrackedDeviceToRenderModel[vr::k_unMaxTrackedDeviceCount];
