@@ -685,7 +685,16 @@ void RhinoVrRenderer::HandleInput()
               if (GetWorldPickLineAndClipRegion(m_rmat4DevicePose[unDevice], world_line, clip_region, line_vp, line_pixel))
               {
                 LPARAM nFlags = 0;
-                ON_3dPoint screen_pt = ON_3dPoint::Origin;
+                ON_3dPoint screen_pt = ON_3dPoint(line_pixel.x, line_pixel.y, 0.0);
+
+                CRhinoViewport& rhino_vp = rhino_view->ActiveViewport();
+
+                const ON_Viewport orig_vp = rhino_vp.VP();
+                const int orig_width = orig_vp.ScreenPortWidth();
+                const int orig_height = orig_vp.ScreenPortHeight();
+
+                rhino_vp.SetVP(line_vp, TRUE);
+                rhino_vp.SetScreenSize(line_vp.ScreenPortWidth(), line_vp.ScreenPortHeight());
 
                 ON_3dPoint world_point;
                 if (gp->GetView3dPoint(1, *rhino_view, nFlags, screen_pt, world_line, world_point))
@@ -698,6 +707,9 @@ void RhinoVrRenderer::HandleInput()
 
                   RhinoVrPostDigitizerEvent(ray, nFlags);
                 }
+
+                rhino_vp.SetVP(orig_vp, TRUE);
+                rhino_vp.SetScreenSize(orig_width, orig_height);
               }
             }
             else
