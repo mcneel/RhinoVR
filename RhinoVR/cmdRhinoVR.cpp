@@ -65,7 +65,6 @@ CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& co
 {
   if (g_rhino_vr.m_running)
   {
-    // Let the timer do the teardown.
     g_rhino_vr.m_running = false;
 
     delete g_rhino_vr.m_renderer;
@@ -133,7 +132,10 @@ CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& co
   g_rhino_vr.m_renderer = new RhinoVrRenderer(vr_doc_sn, vr_view_sn, vr_viewport_sn);
   if (!g_rhino_vr.m_renderer->InitializeVrRenderer())
   {
+    delete g_rhino_vr.m_renderer;
+    g_rhino_vr.m_renderer = nullptr;
 
+    return CRhinoCommand::failure;
   }
 
   g_rhino_vr.m_running = true;

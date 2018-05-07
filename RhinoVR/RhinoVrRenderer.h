@@ -102,24 +102,22 @@ public:
 
   bool InitializeVrRenderer();
   void HandleInputAndRenderFrame();
-  bool DrawStereoFrame();
+  bool BeginFrameDraw();
+  void EndFrameDraw();
+  bool Draw();
   void HandleInput();
   bool CalculateWindowCoordsForClickSimulation(const ON_Xform& device_pose, ON_2iPoint& window_coords);
   void ProcessVREvent(const vr::VREvent_t & event);
 
 protected:
-  bool InitializeVrSystem();
-  ON_Xform ConvertOpenVRMatrixToXform(const vr::HmdMatrix34_t& matPose);
-  ON_Xform GetHMDMatrixProjectionEye(vr::Hmd_Eye nEye);
-  ON_Xform GetHMDMatrixPoseEye(vr::Hmd_Eye nEye);
+  ON_Xform OpenVrMatrixToXform(const vr::HmdMatrix34_t& matPose);
   void UpdateHMDMatrixPose();
 
   void SetupRenderModels();
-  void SetupRenderModelForTrackedDevice(vr::TrackedDeviceIndex_t unTrackedDeviceIndex);
+  void SetupRenderModelForDevice(vr::TrackedDeviceIndex_t unTrackedDeviceIndex);
   ON_Mesh LoadHiddenAreaMesh(vr::Hmd_Eye eye);
   RhinoVrDeviceModel* FindOrLoadRenderModel(const char* pchRenderModelName);
   void UpdateDeviceState(const ON_Xform& device_to_world);
-  void MeasureFramesPerSecond();
   void UpdateState();
 
   bool GetWorldPickLineAndClipRegion(
@@ -133,6 +131,9 @@ protected:
   unsigned int m_doc_sn;
   unsigned int m_view_sn;
   unsigned int m_vr_viewport_sn;
+
+  CRhinoDoc* m_doc;
+  CRhinoView* m_view;
 
   int m_window_width;
   int m_window_height;
@@ -210,7 +211,8 @@ protected:
   //RhinoVrHiddenAreaMeshDisplayConduit m_hidden_mesh_display_conduit;
 
 private:
-  vr::IVRSystem* m_pHMD;
-  vr::IVRRenderModels* m_pRenderModels;
+  vr::IVRSystem* m_hmd;
+  vr::IVRRenderModels* m_render_models;
+  vr::IVRCompositor* m_compositor;
 };
 
