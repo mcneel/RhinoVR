@@ -27,7 +27,7 @@
     <ClCompile Include="cmdRhinoVR.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="RhinoVrWindow.cpp">
+    <ClCompile Include="RhinoVrRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -47,7 +47,7 @@
     <ClInclude Include="targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="RhinoVrWindow.h">
+    <ClInclude Include="RhinoVrRenderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

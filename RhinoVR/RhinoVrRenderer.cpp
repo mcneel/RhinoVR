@@ -1,5 +1,5 @@
 #include "StdAfx.h"
-#include "RhinoVrWindow.h"
+#include "RhinoVrRenderer.h"
 
 #pragma comment(lib, "../OpenVR/lib/win64/openvr_api.lib")
 
