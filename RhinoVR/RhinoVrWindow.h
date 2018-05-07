@@ -107,8 +107,6 @@ public:
   bool CalculateWindowCoordsForClickSimulation(const ON_Xform& device_pose, ON_2iPoint& window_coords);
   void ProcessVREvent(const vr::VREvent_t & event);
 
-  void SetTargetFrameRate(int target_frame_rate);
-
 protected:
   bool InitializeVrSystem();
   ON_Xform ConvertOpenVRMatrixToXform(const vr::HmdMatrix34_t& matPose);
@@ -132,80 +130,86 @@ protected:
     ON_2iPoint& line_pixel);
 
 protected:
-  unsigned int m_vr_doc_sn;
-  unsigned int m_vr_view_sn;
+  unsigned int m_doc_sn;
+  unsigned int m_view_sn;
   unsigned int m_vr_viewport_sn;
 
   int m_window_width;
   int m_window_height;
 
-  int m_target_frame_rate;
-
-  float m_fNearClip;
-  float m_fFarClip;
+  float m_near_clip;
+  float m_far_clip;
 
   float m_left_frus_left, m_left_frus_right, m_left_frus_top, m_left_frus_bottom;
   float m_right_frus_left, m_right_frus_right, m_right_frus_top, m_right_frus_bottom;
 
   double m_unit_scale;
 
-  ON_Xform m_mat4ProjectionLeft;
-  ON_Xform m_mat4ProjectionRight;
-  ON_Xform m_mat4eyePosLeft;
-  ON_Xform m_mat4eyePosRight;
+  ON_Xform m_cam_to_eye_xform_left;
+  ON_Xform m_cam_to_eye_xform_right;
 
-  ON_Xform m_mat4HMDPose;
-  ON_Xform m_mat4HMDPoseCorrection;
+  ON_Xform m_hmd_xform;
+  ON_Xform m_hmd_location_correction_xform;
 
-  bool m_hmd_pose_correction_acquired;
+  bool m_hmd_location_correction_acquired;
 
   ON_Xform m_cam_to_world;
   ON_Xform m_world_to_cam;
 
-  ON_Xform m_clip_to_left_eye;
-  ON_Xform m_clip_to_right_eye;
+  ON_Xform m_clip_to_eye_xform_left;
+  ON_Xform m_clip_to_eye_xform_right;
 
   ON_3dVector m_camera_translation;
   double m_camera_rotation;
-  ON_3dVector m_previous_cam_dir;
+  ON_3dVector m_previous_camera_direction;
 
+  // The original viewport from the Rhino view.
   ON_Viewport m_vp_orig;
-  ON_Viewport m_vp_orig_vr_frus;
+
+  // The original viewport from the Rhino view,
+  // but modified to have a frustum in accordance
+  // to the HMD's field of view.
+  ON_Viewport m_vp_orig_hmd_frus;
+
+  // A viewport which represents the world-space
+  // location, orientation and field of view of the HMD.
   ON_Viewport m_vp_hmd;
+
+  // A viewport which represents the world-space
+  // location, orientation and field of view of the HMD's
+  // left eye.
   ON_Viewport m_vp_left_eye;
+
+  // A viewport which represents the world-space
+  // location, orientation and field of view of the HMD's
+  // right eye.
   ON_Viewport m_vp_right_eye;
 
+  // A line which represents the object-space pointer line
+  // shooting out from the controllers.
   ON_Line m_pointer_line;
 
   float m_trigger_value;
   ON_2dPoint m_trackpad_point;
 
-  vr::TrackedDevicePose_t m_rTrackedDevicePose[vr::k_unMaxTrackedDeviceCount];
-  RhinoVrDeviceModel* m_rTrackedDeviceToRenderModel[vr::k_unMaxTrackedDeviceCount];
+  vr::TrackedDevicePose_t m_device_pose[vr::k_unMaxTrackedDeviceCount];
+  RhinoVrDeviceModel* m_device_render_model[vr::k_unMaxTrackedDeviceCount];
 
-  ON_Xform m_rmat4DevicePose[vr::k_unMaxTrackedDeviceCount];
-  bool m_rbShowTrackedDevice[vr::k_unMaxTrackedDeviceCount];
-  uint64_t m_device_packet_num[vr::k_unMaxTrackedDeviceCount];
-  std::vector<RhinoVrDeviceModel*> m_vecRenderModels;
+  ON_Xform m_device_xform[vr::k_unMaxTrackedDeviceCount];
+  bool m_show_device[vr::k_unMaxTrackedDeviceCount];
+  ON_SimpleArray<RhinoVrDeviceModel*> m_device_render_models;
 
-  ON_Mesh m_hidden_area_mesh_left;
-  ON_Mesh m_hidden_area_mesh_right;
-  CRhinoCacheHandle m_hidden_area_mesh_left_cache_handle;
-  CRhinoCacheHandle m_hidden_area_mesh_right_cache_handle;
-
-  RhinoVrDeviceController m_device_controllers[vr::k_unMaxTrackedDeviceCount];
-
-  int m_iValidPoseCount;
-
-  std::string m_strPoseClasses; // what classes we saw poses for this frame
-  char m_rDevClassChar[vr::k_unMaxTrackedDeviceCount];   // for each device, a character representing its class
-
+  RhinoVrDeviceController m_device_controller[vr::k_unMaxTrackedDeviceCount];
   RhinoVrDeviceDisplayConduit m_device_display_conduit[vr::k_unMaxTrackedDeviceCount];
-  RhinoVrHiddenAreaMeshDisplayConduit m_hidden_mesh_display_conduit;
+
+  //ON_Mesh m_hidden_area_mesh_left;
+  //ON_Mesh m_hidden_area_mesh_right;
+  //CRhinoCacheHandle m_hidden_area_mesh_left_cache_handle;
+  //CRhinoCacheHandle m_hidden_area_mesh_right_cache_handle;
+
+  //RhinoVrHiddenAreaMeshDisplayConduit m_hidden_mesh_display_conduit;
 
 private:
-  CRhinoDib m_framebuffer_dib;
-
   vr::IVRSystem* m_pHMD;
   vr::IVRRenderModels* m_pRenderModels;
 };
