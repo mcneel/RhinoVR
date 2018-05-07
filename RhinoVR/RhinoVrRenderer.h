@@ -97,7 +97,7 @@ public:
 class RhinoVrRenderer
 {
 public:
-  RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn, unsigned int viewport_sn);
+  RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn);
   virtual ~RhinoVrRenderer();
 
   bool InitializeVrRenderer();
@@ -130,10 +130,12 @@ protected:
 protected:
   unsigned int m_doc_sn;
   unsigned int m_view_sn;
-  unsigned int m_vr_viewport_sn;
 
   CRhinoDoc* m_doc;
   CRhinoView* m_view;
+
+  std::unique_ptr<CRhinoViewport> m_vr_vp;
+  std::unique_ptr<CRhinoDisplayPipeline> m_vr_dp;
 
   int m_window_width;
   int m_window_height;

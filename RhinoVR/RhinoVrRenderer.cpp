@@ -7,12 +7,13 @@ void RhinoVrPostDigitizerEvent(ON_3dRay ray, LPARAM nFlags);
 void RhinoVrPostGetObjectEvent(CRhinoGetObject* go, CRhinoView* view);
 unsigned long long RhinoVrGetEyeTextureHandle(CRhinoDisplayPipeline* dp, int eye);
 
-RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn, unsigned int viewport_sn)
+RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   : m_doc_sn(doc_sn)
   , m_view_sn(view_sn)
-  , m_vr_viewport_sn(viewport_sn)
   , m_doc(nullptr)
   , m_view(nullptr)
+  , m_vr_vp(nullptr)
+  , m_vr_dp(nullptr)
   , m_hmd(nullptr)
   , m_render_models(nullptr)
   , m_compositor(nullptr)
@@ -45,6 +46,18 @@ RhinoVrRenderer::~RhinoVrRenderer()
   m_compositor = nullptr;
 
   vr::VR_Shutdown();
+
+  if (m_vr_vp)
+  {
+    // Prevent any copied conduit bindings from getting unbound by
+    // viewport's destructor...Since "CopyFrom" also forces copying
+    // the viewport's Id so that any bound conduits work on copied viewport,
+    // we must also force the Id to something other than the VP that 
+    // got copied, so the destructor does not then unbind any conduits 
+    // to said VP...
+    // RH-34780: http://mcneel.myjetbrains.com/youtrack/issue/RH-34780
+    m_vr_vp->m_v.m_vp.ChangeViewportId(ON_nil_uuid);
+  }
 }
 
 bool RhinoVrRenderer::InitializeVrRenderer()
@@ -93,12 +106,26 @@ bool RhinoVrRenderer::InitializeVrRenderer()
   uint32_t rec_width, rec_height;
   m_hmd->GetRecommendedRenderTargetSize(&rec_width, &rec_height);
 
-  CRhinoViewport* vr_vp = CRhinoViewport::FromRuntimeSerialNumber(m_vr_viewport_sn);
-
-  if (vr_vp == nullptr)
+  CRhinoView* view = CRhinoView::FromRuntimeSerialNumber(m_view_sn);
+  if (view == nullptr)
     return false;
 
-  ON_Viewport vp = m_vp_orig = vr_vp->VP();
+  CRhinoDisplayPipeline* view_dp = view->DisplayPipeline();
+  if (view_dp == nullptr)
+    return false;
+
+  m_vr_vp = std::make_unique<CRhinoViewport>();
+  m_vr_vp->CopyFrom(view->Viewport(), true);
+  m_vr_vp->SetScreenSize(rec_width, rec_height);
+
+  view_dp->OpenPipeline();
+  m_vr_dp = std::unique_ptr<CRhinoDisplayPipeline>(view_dp->ClonePipeline(*m_vr_vp));
+  view_dp->ClosePipeline();
+
+  if (m_vr_dp == nullptr)
+    return false;
+
+  ON_Viewport vp = m_vp_orig = m_vr_dp->VP();
 
   double l, r, b, t, n, f;
   vp.GetFrustum(&l, &r, &b, &t, &n, &f);
@@ -146,10 +173,6 @@ bool RhinoVrRenderer::InitializeVrRenderer()
   RhinoApp().RunScriptEx(m_doc_sn, script, nullptr, 0);
 
   vp.SetScreenPort(0, vp_width, 0, vp_height);
-
-  CRhinoView* view = CRhinoView::FromRuntimeSerialNumber(m_view_sn);
-  if (view == nullptr)
-    return false;
 
   view->ActiveViewport().SetVP(vp, TRUE);
   view->Redraw();
@@ -397,13 +420,6 @@ void RhinoVrRenderer::UpdateState()
     return;
   }
 
-  CRhinoViewport* vr_vp = CRhinoViewport::FromRuntimeSerialNumber(m_vr_viewport_sn);
-
-  if (vr_vp == nullptr)
-  {
-    return;
-  }
-
   UpdateHMDMatrixPose();
 
   if (m_trackpad_point != ON_2dPoint::UnsetPoint)
@@ -476,7 +492,7 @@ void RhinoVrRenderer::UpdateState()
   m_previous_camera_direction = m_vp_hmd.CameraDirection().UnitVector();
 
   // By default, the view is set to the HMD viewport.
-  vr_vp->SetVP(m_vp_hmd, TRUE);
+  m_vr_vp->SetVP(m_vp_hmd, TRUE);
 
   ON_Xform cam_to_left_eye_xform = m_cam_to_world * m_hmd_xform * m_cam_to_eye_xform_left * m_world_to_cam;
 
@@ -521,7 +537,6 @@ void DrawStereoFrameBuffer(
 
   //m_hidden_mesh_display_conduit.SetActiveEye(vr::Eye_Left);
 
-  //vr_vp->SetVP(vp_left_eye, TRUE);
   dp.ClosePipeline();
   dp.DrawFrameBuffer(dpa, vp_left_eye, true, true);
   dp.OpenPipeline();
@@ -530,7 +545,6 @@ void DrawStereoFrameBuffer(
 
   //m_hidden_mesh_display_conduit.SetActiveEye(vr::Eye_Right);
 
-  //vr_vp->SetVP(m_vp_right_eye, TRUE);
   dp.ClosePipeline();
   dp.DrawFrameBuffer(dpa, vp_right_eye, true, true);
   dp.OpenPipeline();
@@ -545,33 +559,21 @@ void DrawStereoFrameBuffer(
 bool RhinoVrRenderer::Draw()
 {
   if (m_compositor == nullptr || m_view == nullptr)
-  {
     return false;
-  }
 
-  CRhinoViewport* vr_vp = CRhinoViewport::FromRuntimeSerialNumber(m_vr_viewport_sn);
-
-  if (vr_vp == nullptr)
-  {
-    return false;
-  }
-
-  CRhinoDisplayPipeline* vr_dp = vr_vp->DisplayPipeline();
   CDisplayPipelineAttributes* vr_dpa = m_view->DisplayAttributes();
 
-  if (vr_dp == nullptr || vr_dpa == nullptr)
-  {
+  if (vr_dpa == nullptr)
     return false;
-  }
 
   unsigned long long eye_left_handle = 0;
   unsigned long long eye_right_handle = 0;
 
-  DrawStereoFrameBuffer(*vr_dp, *vr_dpa, m_vp_left_eye, m_vp_right_eye, eye_left_handle, eye_right_handle);
+  DrawStereoFrameBuffer(*m_vr_dp, *vr_dpa, m_vp_left_eye, m_vp_right_eye, eye_left_handle, eye_right_handle);
 
   vr::EVRCompositorError ovr_error = vr::VRCompositorError_None;
 
-  vr_dp->OpenPipeline();
+  m_vr_dp->OpenPipeline();
 
   vr::Texture_t leftEyeTexture = { (void*)(uintptr_t)eye_left_handle, vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
   ovr_error = m_compositor->Submit(vr::Eye_Left, &leftEyeTexture);
@@ -587,7 +589,7 @@ bool RhinoVrRenderer::Draw()
     ASSERT(false);
   }
 
-  vr_dp->ClosePipeline();
+  m_vr_dp->ClosePipeline();
 
   return true;
 }
@@ -639,16 +641,7 @@ bool RhinoVrRenderer::CalculateWindowCoordsForClickSimulation(
   window_coords.x = window_coords.y = -1;
 
   if (m_doc == nullptr || m_view == nullptr)
-  {
     return false;
-  }
-
-  CRhinoViewport* vr_vp = CRhinoViewport::FromRuntimeSerialNumber(m_vr_viewport_sn);
-
-  if (vr_vp == nullptr)
-  {
-    return false;
-  }
 
   ON_Viewport ray_vp = m_vp_hmd;
 
@@ -664,9 +657,9 @@ bool RhinoVrRenderer::CalculateWindowCoordsForClickSimulation(
 
   ON_2iPoint center_pixel = ON_2iPoint(ray_vp.ScreenPortWidth() / 2, ray_vp.ScreenPortHeight() / 2);
 
-  vr_vp->SetVP(ray_vp, TRUE);
-  vr_vp->SetClippingRegionTransformation(center_pixel.x, center_pixel.y, pc.m_pick_region);
-  vr_vp->SetVP(m_vp_hmd, TRUE);
+  m_vr_vp->SetVP(ray_vp, TRUE);
+  m_vr_vp->SetClippingRegionTransformation(center_pixel.x, center_pixel.y, pc.m_pick_region);
+  m_vr_vp->SetVP(m_vp_hmd, TRUE);
 
   ray_vp.GetFrustumLine(center_pixel.x, center_pixel.y, pc.m_pick_line);
 
@@ -682,7 +675,6 @@ bool RhinoVrRenderer::CalculateWindowCoordsForClickSimulation(
   if (rhino_objs.Count() > 0)
   {
     CRhinoObjRef objref = rhino_objs[0];
-//    objref.Object()->Select();
 
     ON_3dPoint isect_pt;
     if (objref.SelectionPoint(isect_pt))
@@ -702,13 +694,6 @@ bool RhinoVrRenderer::GetWorldPickLineAndClipRegion(
   ON_Viewport& line_vp,
   ON_2iPoint& line_pixel)
 {
-  CRhinoViewport* vr_vp = CRhinoViewport::FromRuntimeSerialNumber(m_vr_viewport_sn);
-
-  if (vr_vp == nullptr)
-  {
-    return false;
-  }
-
   line_vp = m_vp_hmd;
 
   line_vp.SetCameraLocation(ON_3dPoint::Origin);
@@ -733,9 +718,9 @@ bool RhinoVrRenderer::GetWorldPickLineAndClipRegion(
 
   line_pixel = ON_2iPoint(line_vp.ScreenPortWidth() / 2 + 1, line_vp.ScreenPortHeight() / 2 + 1);
 
-  vr_vp->SetVP(line_vp, TRUE);
-  vr_vp->SetClippingRegionTransformation(line_pixel.x, line_pixel.y, clip_region);
-  vr_vp->SetVP(m_vp_hmd, TRUE);
+  m_vr_vp->SetVP(line_vp, TRUE);
+  m_vr_vp->SetClippingRegionTransformation(line_pixel.x, line_pixel.y, clip_region);
+  m_vr_vp->SetVP(m_vp_hmd, TRUE);
 
   line_vp.GetFrustumLine(line_pixel.x, line_pixel.y, world_line);
 
@@ -745,9 +730,7 @@ bool RhinoVrRenderer::GetWorldPickLineAndClipRegion(
 void RhinoVrRenderer::HandleInput()
 {
   if (m_doc == nullptr || m_view == nullptr)
-  {
     return;
-  }
 
   vr::VREvent_t event;
   while (m_hmd->PollNextEvent(&event, sizeof(event)))
@@ -968,13 +951,7 @@ void RhinoVrRenderer::HandleInput()
               ON_3dPoint world_point;
               if (gp->GetView3dPoint(1, *m_view, (UINT_PTR)nFlags, screen_pt, world_line, world_point))
               {
-                //rhino_doc->AddPointObject(world_point);
-
-                CRhinoViewport* vr_vp = CRhinoViewport::FromRuntimeSerialNumber(m_vr_viewport_sn);
-                if (vr_vp)
-                {
-                  gp->OnMouseMove(*vr_vp, (UINT)nFlags, world_point, (const ON_2iPoint*) nullptr);
-                }
+                gp->OnMouseMove(*m_vr_vp, (UINT)nFlags, world_point, (const ON_2iPoint*) nullptr);
               }
 
               rhino_vp.SetVP(orig_vp, TRUE);
