@@ -33,10 +33,10 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   , m_hmd_location_correction_acquired(false)
   , m_unit_scale(1.0)
 {
-  memset(m_show_device, 0, sizeof(m_show_device));
   memset(m_device_pose, 0, sizeof(m_device_pose));
-  memset(m_device_render_model, 0, sizeof(m_device_render_model));
-  memset(m_device_controller, 0, sizeof(m_device_controller));
+  
+  m_device_data.SetCapacity(vr::k_unMaxTrackedDeviceCount);
+  m_device_data.SetCount(vr::k_unMaxTrackedDeviceCount);
 }
 
 RhinoVrRenderer::~RhinoVrRenderer()
@@ -293,11 +293,12 @@ void RhinoVrRenderer::SetupRenderModelForDevice(vr::TrackedDeviceIndex_t device_
   }
   else
   {
-    m_device_render_model[device_index] = render_model;
+    RhinoVrDeviceData& device_data = m_device_data[device_index];
+    device_data.m_render_model = render_model;
 
     if (!render_model_name.EqualOrdinal("lh_basestation_vive", false))
     {
-      m_show_device[device_index] = true;
+      device_data.m_show = true;
     }
   }
 }
@@ -359,12 +360,14 @@ void RhinoVrRenderer::UpdateDeviceState(const ON_Xform& device_to_world)
 
   for (uint32_t unTrackedDevice = 0; unTrackedDevice < vr::k_unMaxTrackedDeviceCount; unTrackedDevice++)
   {
-    RhinoVrDeviceDisplayConduit& ddc = m_device_display_conduit[unTrackedDevice];
+    RhinoVrDeviceData& device_data = m_device_data[unTrackedDevice];
+
+    RhinoVrDeviceDisplayConduit& ddc = device_data.m_display_conduit;
     ddc.Empty();
 
-    RhinoVrDeviceModel* device_model = m_device_render_model[unTrackedDevice];
+    RhinoVrDeviceModel* device_model = device_data.m_render_model;
 
-    if (!device_model || !m_show_device[unTrackedDevice])
+    if (!device_model || !device_data.m_show)
       continue;
 
     const vr::TrackedDevicePose_t& pose = m_device_pose[unTrackedDevice];
@@ -382,7 +385,7 @@ void RhinoVrRenderer::UpdateDeviceState(const ON_Xform& device_to_world)
     }
 
     const ON_Mesh& device_mesh = device_model->m_device_mesh;
-    const ON_Xform device_xform = device_to_world * m_device_xform[unTrackedDevice];
+    const ON_Xform device_xform = device_to_world * device_data.m_xform;
     CRhinoCacheHandle& device_cache_handle = device_model->m_cache_handle;
     
     ddc.SetDeviceMesh(&device_mesh);
@@ -413,11 +416,11 @@ void RhinoVrRenderer::UpdateDeviceState(const ON_Xform& device_to_world)
 
 bool IsKeyPressed(int uKey) { return ((::GetAsyncKeyState(uKey) & 0x8000) == 0x8000); }
 
-void RhinoVrRenderer::UpdateState()
+bool RhinoVrRenderer::UpdateState()
 {
   if (m_view == nullptr || m_doc == nullptr)
   {
-    return;
+    return false;
   }
 
   UpdateHMDMatrixPose();
@@ -449,23 +452,6 @@ void RhinoVrRenderer::UpdateState()
       }
     }
   }
-
-  //if (IsKeyPressed(VK_UP) && m_previous_cam_dir != ON_3dVector::UnsetVector)
-  //{
-  //  m_camera_translation = m_camera_translation + 0.5*m_previous_cam_dir*m_unit_scale;
-  //}
-  //if (IsKeyPressed(VK_DOWN) && m_previous_cam_dir != ON_3dVector::UnsetVector)
-  //{
-  //  m_camera_translation = m_camera_translation - 0.5*m_previous_cam_dir*m_unit_scale;
-  //}
-  //if (IsKeyPressed(VK_LEFT))
-  //{
-  //  m_camera_rotation = m_camera_rotation + 9.0*ON_DEGREES_TO_RADIANS;
-  //}
-  //if (IsKeyPressed(VK_RIGHT))
-  //{
-  //  m_camera_rotation = m_camera_rotation - 9.0*ON_DEGREES_TO_RADIANS;
-  //}
 
   const ON_Viewport& rhino_vp = m_view->ActiveViewport().VP();
 
@@ -519,6 +505,8 @@ void RhinoVrRenderer::UpdateState()
   m_vp_right_eye.GetXform(ON::coordinate_system::clip_cs, ON::coordinate_system::world_cs, m_clip_to_eye_xform_right);
 
   UpdateDeviceState(m_cam_to_world);
+
+  return true;
 }
 
 void DrawStereoFrameBuffer(
@@ -727,10 +715,10 @@ bool RhinoVrRenderer::GetWorldPickLineAndClipRegion(
   return true;
 }
 
-void RhinoVrRenderer::HandleInput()
+bool RhinoVrRenderer::HandleInput()
 {
   if (m_doc == nullptr || m_view == nullptr)
-    return;
+    return false;
 
   vr::VREvent_t event;
   while (m_hmd->PollNextEvent(&event, sizeof(event)))
@@ -746,7 +734,8 @@ void RhinoVrRenderer::HandleInput()
     vr::VRControllerState_t state;
     if (m_hmd->GetControllerState(unDevice, &state, sizeof(state)))
     {
-      RhinoVrDeviceController& controller = m_device_controller[unDevice];
+      RhinoVrDeviceData& device_data = m_device_data[unDevice];
+      RhinoVrDeviceController& controller = device_data.m_controller;
 
       if (controller.m_touchpad_button_pressed)
       {
@@ -772,7 +761,7 @@ void RhinoVrRenderer::HandleInput()
             ON_Viewport line_vp;
             ON_2iPoint line_pixel;
 
-            if (GetWorldPickLineAndClipRegion(m_device_xform[unDevice], world_line, clip_region, line_vp, line_pixel))
+            if (GetWorldPickLineAndClipRegion(device_data.m_xform, world_line, clip_region, line_vp, line_pixel))
             {
               LPARAM nFlags = 0;
               ON_3dPoint screen_pt = ON_3dPoint(line_pixel.x, line_pixel.y, 0.0);
@@ -812,7 +801,7 @@ void RhinoVrRenderer::HandleInput()
             pc.m_pick_mode = CRhinoPickContext::shaded_pick;
             pc.m_pick_style = CRhinoPickContext::point_pick;
 
-            if (GetWorldPickLineAndClipRegion(m_device_xform[unDevice], pc.m_pick_line, pc.m_pick_region, line_vp, line_pixel))
+            if (GetWorldPickLineAndClipRegion(device_data.m_xform, pc.m_pick_line, pc.m_pick_region, line_vp, line_pixel))
             {
               pc.UpdateClippingPlanes();
 
@@ -888,6 +877,11 @@ void RhinoVrRenderer::HandleInput()
         {
           controller.m_top_button_pressed = true;
           RhinoApp().ExecuteCommand(m_doc_sn, L"Move");
+
+          // Need to re-attach since ExecuteCommand pumps messages
+          // and can basically do anything, including e.g. deleting views.
+          if (!AttachDocAndView())
+            return false;
         }
       }
 
@@ -922,6 +916,11 @@ void RhinoVrRenderer::HandleInput()
           controller.m_trigger_pressed = true;
 
           RhinoApp().ExecuteCommand(m_doc_sn, L"_Enter");
+
+          // Need to re-attach since ExecuteCommand pumps messages
+          // and can basically do anything, including e.g. deleting views.
+          if (!AttachDocAndView())
+            return false;
         }
         else
         {
@@ -934,7 +933,7 @@ void RhinoVrRenderer::HandleInput()
             ON_Viewport line_vp;
             ON_2iPoint line_pixel;
 
-            if (GetWorldPickLineAndClipRegion(m_device_xform[unDevice], world_line, clip_region, line_vp, line_pixel))
+            if (GetWorldPickLineAndClipRegion(device_data.m_xform, world_line, clip_region, line_vp, line_pixel))
             {
               LPARAM nFlags = 0;
               ON_3dPoint screen_pt = ON_3dPoint(line_pixel.x, line_pixel.y, 0.0);
@@ -960,37 +959,30 @@ void RhinoVrRenderer::HandleInput()
           }
         }
       }
-
-      //auto trigger_check = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_SteamVR_Trigger);
-
-      //if ((state.ulButtonPressed & trigger_check) > 0/* && m_device_packet_num[unDevice] != state.unPacketNum*/)
-      //{
-      //  //m_rbShowTrackedDevice[unDevice] = !m_rbShowTrackedDevice[unDevice];
-      //  //m_device_packet_num[unDevice] = state.unPacketNum;
-      //}
     }
   }
 
-  //if (GetView3dPoint(1, // 1 = mouse pointing device
-  //  view,
-  //  nFlags,
-  //  ON_3dPoint(point.x, point.y, 0.0),
-  //  world_line, world_point))
-  //{
+  return true;
 }
 
 void RhinoVrRenderer::HandleInputAndRenderFrame()
 {
-  if (BeginFrameDraw())
+  if (AttachDocAndView())
   {
-    UpdateState();
-    HandleInput();
-    Draw();
-    EndFrameDraw();
+    if (!UpdateState())
+      return;
+
+    if (!HandleInput())
+      return;
+
+    if (!Draw())
+      return;
+
+    DetachDocAndView();
   }
 }
 
-bool RhinoVrRenderer::BeginFrameDraw()
+bool RhinoVrRenderer::AttachDocAndView()
 {
   if (m_hmd == nullptr || m_render_models == nullptr || m_compositor == nullptr)
     return false;
@@ -1006,7 +998,7 @@ bool RhinoVrRenderer::BeginFrameDraw()
   return true;
 }
 
-void RhinoVrRenderer::EndFrameDraw()
+void RhinoVrRenderer::DetachDocAndView()
 {
   m_doc = nullptr;
   m_view = nullptr;
@@ -1061,13 +1053,13 @@ void RhinoVrRenderer::UpdateHMDMatrixPose()
     if (m_device_pose[device_idx].bPoseIsValid)
     {
       const vr::HmdMatrix34_t& ovr_device_matrix = m_device_pose[device_idx].mDeviceToAbsoluteTracking;
-      m_device_xform[device_idx] = m_hmd_location_correction_xform * OpenVrMatrixToXform(ovr_device_matrix);
+      m_device_data[device_idx].m_xform = m_hmd_location_correction_xform * OpenVrMatrixToXform(ovr_device_matrix);
     }
   }
 
   if (m_device_pose[hmd_device_index].bPoseIsValid)
   {
-    m_hmd_xform = m_device_xform[hmd_device_index];
+    m_hmd_xform = m_device_data[hmd_device_index].m_xform;
 
     m_cam_to_eye_xform_left = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Left));
     m_cam_to_eye_xform_right = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Right));

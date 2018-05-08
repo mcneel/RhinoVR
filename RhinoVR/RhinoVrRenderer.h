@@ -82,9 +82,8 @@ public:
   CRhinoCacheHandle m_cache_handle;
 };
 
-class RhinoVrDeviceController
+struct RhinoVrDeviceController
 {
-public:
   bool m_touchpad_button_pressed = false;
   bool m_top_button_pressed = false;
   bool m_grip_button_pressed = false;
@@ -92,6 +91,15 @@ public:
 
   bool m_finger_on_touchpad = false;
   ON_2dPoint m_touchpad_point = ON_2dPoint::Origin;
+};
+
+struct RhinoVrDeviceData
+{
+  bool m_show = false;
+  ON_Xform m_xform = ON_Xform::IdentityTransformation;
+  RhinoVrDeviceModel* m_render_model = nullptr;
+  RhinoVrDeviceDisplayConduit m_display_conduit;
+  RhinoVrDeviceController m_controller;
 };
 
 class RhinoVrRenderer
@@ -102,11 +110,6 @@ public:
 
   bool InitializeVrRenderer();
   void HandleInputAndRenderFrame();
-  bool BeginFrameDraw();
-  void EndFrameDraw();
-  bool Draw();
-  void HandleInput();
-  bool CalculateWindowCoordsForClickSimulation(const ON_Xform& device_pose, ON_2iPoint& window_coords);
   void ProcessVREvent(const vr::VREvent_t & event);
 
 protected:
@@ -118,7 +121,14 @@ protected:
   ON_Mesh LoadHiddenAreaMesh(vr::Hmd_Eye eye);
   RhinoVrDeviceModel* FindOrLoadRenderModel(const char* pchRenderModelName);
   void UpdateDeviceState(const ON_Xform& device_to_world);
-  void UpdateState();
+
+  bool AttachDocAndView();
+  void DetachDocAndView();
+  bool Draw();
+  bool HandleInput();
+  bool UpdateState();
+
+  bool CalculateWindowCoordsForClickSimulation(const ON_Xform& device_pose, ON_2iPoint& window_coords);
 
   bool GetWorldPickLineAndClipRegion(
     const ON_Xform& device_xform,
@@ -196,14 +206,9 @@ protected:
   ON_2dPoint m_trackpad_point;
 
   vr::TrackedDevicePose_t m_device_pose[vr::k_unMaxTrackedDeviceCount];
-  RhinoVrDeviceModel* m_device_render_model[vr::k_unMaxTrackedDeviceCount];
 
-  ON_Xform m_device_xform[vr::k_unMaxTrackedDeviceCount];
-  bool m_show_device[vr::k_unMaxTrackedDeviceCount];
+  ON_ClassArray<RhinoVrDeviceData> m_device_data;
   ON_SimpleArray<RhinoVrDeviceModel*> m_device_render_models;
-
-  RhinoVrDeviceController m_device_controller[vr::k_unMaxTrackedDeviceCount];
-  RhinoVrDeviceDisplayConduit m_device_display_conduit[vr::k_unMaxTrackedDeviceCount];
 
   //ON_Mesh m_hidden_area_mesh_left;
   //ON_Mesh m_hidden_area_mesh_right;
