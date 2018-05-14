@@ -59,7 +59,6 @@ private:
   unsigned int m_uiDocSerialNumber;
 
   bool m_draw_hidden_area_mesh;
-  vr::EVREye m_active_eye;
 
   const ON_Mesh* m_hidden_area_mesh_left;
   const ON_Mesh* m_hidden_area_mesh_right;
@@ -84,13 +83,25 @@ public:
 
 struct RhinoVrDeviceController
 {
+  bool m_touchpad_button_down = false;
   bool m_touchpad_button_pressed = false;
-  bool m_top_button_pressed = false;
-  bool m_grip_button_pressed = false;
-  bool m_trigger_pressed = false;
+  bool m_touchpad_button_released = false;
+  bool m_touchpad_button_touched = false;
 
-  bool m_finger_on_touchpad = false;
-  ON_2dPoint m_touchpad_point = ON_2dPoint::Origin;
+  bool m_appmenu_button_down = false;
+  bool m_appmenu_button_pressed = false;
+  bool m_appmenu_button_released = false;
+
+  bool m_grip_button_down = false;
+  bool m_grip_button_pressed = false;
+  bool m_grip_button_released = false;
+
+  bool m_trigger_button_down = false;
+  bool m_trigger_button_pressed = false;
+  bool m_trigger_button_released = false;
+
+  float m_trigger_button_value = 0.0f;
+  ON_2dPoint m_touchpad_touch_point = ON_2dPoint::Origin;
 };
 
 struct RhinoVrDeviceData
@@ -108,27 +119,32 @@ public:
   RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn);
   virtual ~RhinoVrRenderer();
 
-  bool InitializeVrRenderer();
-  void HandleInputAndRenderFrame();
-  void ProcessVREvent(const vr::VREvent_t & event);
+  bool Initialize();
+  void ProcessInputAndRenderFrame();
 
 protected:
   ON_Xform OpenVrMatrixToXform(const vr::HmdMatrix34_t& matPose);
-  void UpdateHMDMatrixPose();
+
+  bool UpdateDeviceXforms();
 
   void SetupRenderModels();
   void SetupRenderModelForDevice(vr::TrackedDeviceIndex_t unTrackedDeviceIndex);
   ON_Mesh LoadHiddenAreaMesh(vr::Hmd_Eye eye);
   RhinoVrDeviceModel* FindOrLoadRenderModel(const char* pchRenderModelName);
-  void UpdateDeviceState(const ON_Xform& device_to_world);
+  void UpdateDeviceDisplayConduits(const ON_Xform& device_to_world);
 
   bool AttachDocAndView();
   void DetachDocAndView();
   bool Draw();
   bool HandleInput();
   bool UpdateState();
+  void GetRhinoVrControllerState(const vr::VRControllerState_t& state, RhinoVrDeviceController& controller);
+  void ProcessVrEvent(const vr::VREvent_t & event);
 
-  bool CalculateWindowCoordsForClickSimulation(const ON_Xform& device_pose, ON_2iPoint& window_coords);
+  void RhinoVrGetPoint(const ON_Xform& picking_device_xform);
+  void RhinoVrOnMouseMove(const ON_Xform& picking_device_xform);
+  bool RhinoVrGetIntersectingObject(
+    const ON_Xform& picking_device_xform, const CRhinoObject*& isect_object, ON_3dPoint& isect_point);
 
   bool GetWorldPickLineAndClipRegion(
     const ON_Xform& device_xform,
@@ -202,10 +218,7 @@ protected:
   // shooting out from the controllers.
   ON_Line m_pointer_line;
 
-  float m_trigger_value;
-  ON_2dPoint m_trackpad_point;
-
-  vr::TrackedDevicePose_t m_device_pose[vr::k_unMaxTrackedDeviceCount];
+  vr::TrackedDevicePose_t m_device_poses[vr::k_unMaxTrackedDeviceCount];
 
   ON_ClassArray<RhinoVrDeviceData> m_device_data;
   ON_SimpleArray<RhinoVrDeviceModel*> m_device_render_models;

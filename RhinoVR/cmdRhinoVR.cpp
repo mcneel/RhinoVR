@@ -44,7 +44,7 @@ void RhinoVrUpdate()
 {
   if (g_rhino_vr.m_running && g_rhino_vr.m_renderer)
   {
-    g_rhino_vr.m_renderer->HandleInputAndRenderFrame();
+    g_rhino_vr.m_renderer->ProcessInputAndRenderFrame();
   }
 }
 
@@ -68,7 +68,8 @@ CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& co
   unsigned int vr_view_sn = rhino_view->RuntimeSerialNumber();
 
   g_rhino_vr.m_renderer = new RhinoVrRenderer(vr_doc_sn, vr_view_sn);
-  if (!g_rhino_vr.m_renderer->InitializeVrRenderer())
+
+  if (!g_rhino_vr.m_renderer->Initialize())
   {
     delete g_rhino_vr.m_renderer;
     g_rhino_vr.m_renderer = nullptr;
