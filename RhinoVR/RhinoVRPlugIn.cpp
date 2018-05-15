@@ -143,15 +143,8 @@ void CRhinoVRPlugIn::OnUnloadPlugIn()
   // TODO: Add plug-in cleanup code here.
 }
 
-void RhinoVrUpdate();
-
 LRESULT CRhinoVRPlugIn::PlugInProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
-  if (message == 0x1337)
-  {
-    RhinoVrUpdate();
-  }
-  
   return 0;
 }
 

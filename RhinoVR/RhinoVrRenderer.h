@@ -46,13 +46,10 @@ public:
   bool ExecConduit(CRhinoDisplayPipeline& dp, UINT nActiveChannel, bool& bTerminateChannel) override;
   void Enable(unsigned int uiDocSerialNumber);
 
-  void SetActiveEye(vr::EVREye active_eye);
   void SetHiddenAreaMesh(const ON_Mesh* device_mesh, vr::EVREye eye);
   void SetHiddenAreaMeshXform(const ON_Xform& device_xform, vr::EVREye eye);
   void SetHiddenAreaMeshCacheHandle(CRhinoCacheHandle* cache_handle, vr::EVREye eye);
 
-  //void SetFrustumNearFarSuggestion(double frus_near, double frus_far);
-  //void AddLine(const ON_3dPoint& from, const ON_3dPoint& to, const ON_Color& color);
   void Empty();
 
 private:
@@ -162,6 +159,7 @@ protected:
 
   std::unique_ptr<CRhinoViewport> m_vr_vp;
   std::unique_ptr<CRhinoDisplayPipeline> m_vr_dp;
+  CRhinoDisplayPipeline_OGL* m_vr_dp_ogl;
 
   int m_window_width;
   int m_window_height;

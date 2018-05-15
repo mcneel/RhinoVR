@@ -3,6 +3,7 @@
 
 #include "StdAfx.h"
 #include "RhinoVrRenderer.h"
+#include "RhinoVRPlugIn.h"
 
 ////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////
@@ -34,25 +35,38 @@ public:
 // Do NOT create any other instance of a CCommandRhinoVR class.
 static class CCommandRhinoVR theRhinoVRCommand;
 
+class RhinoVrMainLoopEventHook;
+
 struct RhinoVrStruct
 {
   bool m_running = false;
   RhinoVrRenderer* m_renderer = nullptr;
+  RhinoVrMainLoopEventHook* m_loop_hook = nullptr;
 } g_rhino_vr;
 
-void RhinoVrUpdate()
+
+class RhinoVrMainLoopEventHook : public CRhinoOnMainLoopEvent
 {
-  if (g_rhino_vr.m_running && g_rhino_vr.m_renderer)
+public:
+  RhinoVrMainLoopEventHook(ON_UUID plugin_id) : CRhinoOnMainLoopEvent(plugin_id) {}
+
+  void Notify(const class CRhinoOnMainLoopEvent::CParameters& params) override
   {
-    g_rhino_vr.m_renderer->ProcessInputAndRenderFrame();
+    if (g_rhino_vr.m_running && g_rhino_vr.m_renderer)
+    {
+      g_rhino_vr.m_renderer->ProcessInputAndRenderFrame();
+    }
   }
-}
+};
 
 CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& context)
 {
   if (g_rhino_vr.m_running)
   {
     g_rhino_vr.m_running = false;
+
+    delete g_rhino_vr.m_loop_hook;
+    g_rhino_vr.m_loop_hook = nullptr;
 
     delete g_rhino_vr.m_renderer;
     g_rhino_vr.m_renderer = nullptr;
@@ -76,6 +90,9 @@ CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& co
 
     return CRhinoCommand::failure;
   }
+
+  g_rhino_vr.m_loop_hook = new RhinoVrMainLoopEventHook(RhinoVRPlugIn().PlugInID());
+  g_rhino_vr.m_loop_hook->Register();
 
   g_rhino_vr.m_running = true;
 

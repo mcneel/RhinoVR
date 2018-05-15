@@ -5,7 +5,6 @@
 
 void RhinoVrPostDigitizerEvent(ON_3dRay ray, LPARAM nFlags);
 void RhinoVrPostGetObjectEvent(CRhinoGetObject* go, CRhinoView* view);
-unsigned long long RhinoVrGetEyeTextureHandle(CRhinoDisplayPipeline* dp, int eye);
 
 RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   : m_doc_sn(doc_sn)
@@ -14,6 +13,7 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   , m_view(nullptr)
   , m_vr_vp(nullptr)
   , m_vr_dp(nullptr)
+  , m_vr_dp_ogl(nullptr)
   , m_hmd(nullptr)
   , m_render_models(nullptr)
   , m_compositor(nullptr)
@@ -113,15 +113,23 @@ bool RhinoVrRenderer::Initialize()
   if (view_dp == nullptr)
     return false;
 
+  CRhinoDisplayPipeline_OGL* view_dp_ogl = dynamic_cast<CRhinoDisplayPipeline_OGL*>(view_dp);
+  if (view_dp_ogl == nullptr)
+    return false;
+
   m_vr_vp = std::make_unique<CRhinoViewport>();
   m_vr_vp->CopyFrom(view->Viewport(), true);
   m_vr_vp->SetScreenSize(rec_width, rec_height);
 
-  view_dp->OpenPipeline();
-  m_vr_dp = std::unique_ptr<CRhinoDisplayPipeline>(view_dp->ClonePipeline(*m_vr_vp));
-  view_dp->ClosePipeline();
+  view_dp_ogl->OpenPipeline();
+  m_vr_dp = std::unique_ptr<CRhinoDisplayPipeline>(view_dp_ogl->ClonePipeline(*m_vr_vp));
+  view_dp_ogl->ClosePipeline();
 
   if (m_vr_dp == nullptr)
+    return false;
+
+  m_vr_dp_ogl = dynamic_cast<CRhinoDisplayPipeline_OGL*>(m_vr_dp.get());
+  if (m_vr_dp_ogl == nullptr)
     return false;
 
   ON_Viewport vp = m_vp_orig = m_vr_dp->VP();
@@ -533,40 +541,9 @@ bool RhinoVrRenderer::UpdateState()
   return true;
 }
 
-void DrawStereoFrameBuffer(
-  CRhinoDisplayPipeline& dp,
-  CDisplayPipelineAttributes& dpa,
-  ON_Viewport& vp_left_eye, ON_Viewport& vp_right_eye,
-  unsigned long long& eye_handle_left, unsigned long long& eye_handle_right)
-{
-  dp.EnableDynamicDisplayDowngrade(false);
-
-  bool frame_buffer_capture_enabled = CRhinoDisplayPipeline::FrameBufferCaptureEnabled();
-  if (frame_buffer_capture_enabled)
-  {
-    CRhinoDisplayPipeline::EnableFrameBufferCapture(false);
-  }
-
-  dp.ClosePipeline();
-  dp.DrawFrameBuffer(dpa, vp_left_eye, true, true);
-  dp.OpenPipeline();
-
-  eye_handle_left = RhinoVrGetEyeTextureHandle(&dp, 0);
-
-  dp.ClosePipeline();
-  dp.DrawFrameBuffer(dpa, vp_right_eye, true, true);
-  dp.OpenPipeline();
-
-  eye_handle_right = RhinoVrGetEyeTextureHandle(&dp, 1);
-
-  CRhinoDisplayPipeline::EnableFrameBufferCapture(frame_buffer_capture_enabled);
-
-  dp.ClosePipeline();
-}
-
 bool RhinoVrRenderer::Draw()
 {
-  if (m_compositor == nullptr || m_view == nullptr)
+  if (m_compositor == nullptr || m_view == nullptr || m_vr_dp_ogl == nullptr)
     return false;
 
   CDisplayPipelineAttributes* vr_dpa = m_view->DisplayAttributes();
@@ -577,7 +554,10 @@ bool RhinoVrRenderer::Draw()
   unsigned long long eye_left_handle = 0;
   unsigned long long eye_right_handle = 0;
 
-  DrawStereoFrameBuffer(*m_vr_dp, *vr_dpa, m_vp_left_eye, m_vp_right_eye, eye_left_handle, eye_right_handle);
+  bool draw_success = m_vr_dp_ogl->DrawStereoFrameBuffer(*vr_dpa, m_vp_left_eye, m_vp_right_eye, eye_left_handle, eye_right_handle);
+  
+  if (!draw_success)
+    return false;
 
   vr::EVRCompositorError ovr_error = vr::VRCompositorError_None;
 
@@ -1185,7 +1165,7 @@ bool RhinoVrHiddenAreaMeshDisplayConduit::ExecConduit(CRhinoDisplayPipeline & dp
     {
       if (m_pDisplayAttrs->m_bShadeSurface)
       {
-        auto vr_render_context = m_pDisplayAttrs->GetVrRenderContext();
+        //auto vr_render_context = m_pDisplayAttrs->GetVrRenderContext();
 
         if (m_hidden_area_mesh_left)
         {
@@ -1209,11 +1189,6 @@ bool RhinoVrHiddenAreaMeshDisplayConduit::ExecConduit(CRhinoDisplayPipeline & dp
 void RhinoVrHiddenAreaMeshDisplayConduit::Enable(unsigned int uiDocSerialNumber)
 {
   CRhinoDisplayConduit::Enable(uiDocSerialNumber);
-}
-
-void RhinoVrHiddenAreaMeshDisplayConduit::SetActiveEye(vr::EVREye active_eye)
-{
-  m_active_eye = active_eye;
 }
 
 void RhinoVrHiddenAreaMeshDisplayConduit::SetHiddenAreaMesh(const ON_Mesh* hidden_area_mesh, vr::EVREye eye)
