@@ -8,7 +8,6 @@
 class RhinoVrDeviceModel
 {
 public:
-  RhinoVrDeviceModel() = default;
   RhinoVrDeviceModel(const ON_String& sRenderModelName);
   bool Init(const vr::RenderModel_t & vrModel, const vr::RenderModel_TextureMap_t & vrDiffuseTexture, double unit_scale);
   const ON_String& GetName() const;
@@ -68,7 +67,11 @@ protected:
   void SetupRenderModelForDevice(vr::TrackedDeviceIndex_t unTrackedDeviceIndex);
   ON_Mesh LoadHiddenAreaMesh(vr::Hmd_Eye eye);
   RhinoVrDeviceModel* FindOrLoadRenderModel(const char* pchRenderModelName);
-  void UpdateDeviceDisplayConduits(const ON_Xform& device_to_world);
+
+  void UpdateDeviceDisplayConduits(
+    const ON_Xform& camera_to_world_xform,
+    const ON_Xform& clip_to_left_eye_xform,
+    const ON_Xform& clip_to_right_eye_xform);
 
   bool AttachDocAndView();
   void DetachDocAndView();
@@ -109,19 +112,19 @@ protected:
 
   double m_unit_scale;
 
-  ON_Xform m_cam_to_eye_xform_left;
-  ON_Xform m_cam_to_eye_xform_right;
+  ON_Xform m_cam_to_left_eye_xform;
+  ON_Xform m_cam_to_right_eye_xform;
 
   ON_Xform m_hmd_xform;
   ON_Xform m_hmd_location_correction_xform;
 
   bool m_hmd_location_correction_acquired;
 
-  ON_Xform m_cam_to_world;
-  ON_Xform m_world_to_cam;
+  ON_Xform m_cam_to_world_xform;
+  ON_Xform m_world_to_cam_xform;
 
-  ON_Xform m_clip_to_eye_xform_left;
-  ON_Xform m_clip_to_eye_xform_right;
+  ON_Xform m_clip_to_left_eye_xform;
+  ON_Xform m_clip_to_right_eye_xform;
 
   ON_3dVector m_camera_translation;
   double m_camera_rotation;
@@ -156,7 +159,7 @@ protected:
   vr::TrackedDevicePose_t m_device_poses[vr::k_unMaxTrackedDeviceCount];
 
   ON_ClassArray<RhinoVrDeviceData> m_device_data;
-  ON_SimpleArray<RhinoVrDeviceModel*> m_device_render_models;
+  ON_ClassArray<std::unique_ptr<RhinoVrDeviceModel>> m_device_render_models;
 
   ON_Mesh m_hidden_area_mesh_left;
   ON_Mesh m_hidden_area_mesh_right;

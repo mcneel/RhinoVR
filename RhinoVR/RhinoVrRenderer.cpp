@@ -16,12 +16,12 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   , m_compositor(nullptr)
   , m_near_clip(1.0f)
   , m_far_clip(100.0f)
-  , m_cam_to_eye_xform_left(ON_Xform::IdentityTransformation)
-  , m_cam_to_eye_xform_right(ON_Xform::IdentityTransformation)
+  , m_cam_to_left_eye_xform(ON_Xform::IdentityTransformation)
+  , m_cam_to_right_eye_xform(ON_Xform::IdentityTransformation)
   , m_hmd_xform(ON_Xform::IdentityTransformation)
   , m_hmd_location_correction_xform(ON_Xform::IdentityTransformation)
-  , m_clip_to_eye_xform_left(ON_Xform::IdentityTransformation)
-  , m_clip_to_eye_xform_right(ON_Xform::IdentityTransformation)
+  , m_clip_to_left_eye_xform(ON_Xform::IdentityTransformation)
+  , m_clip_to_right_eye_xform(ON_Xform::IdentityTransformation)
   , m_camera_translation(ON_3dVector::ZeroVector)
   , m_pointer_line(ON_Line::UnsetLine)
   , m_previous_camera_direction(ON_3dVector::UnsetVector)
@@ -51,7 +51,6 @@ RhinoVrRenderer::~RhinoVrRenderer()
     // we must also force the Id to something other than the VP that 
     // got copied, so the destructor does not then unbind any conduits 
     // to said VP...
-    // RH-34780: http://mcneel.myjetbrains.com/youtrack/issue/RH-34780
     m_vr_vp->m_v.m_vp.ChangeViewportId(ON_nil_uuid);
   }
 }
@@ -140,17 +139,17 @@ bool RhinoVrRenderer::Initialize()
   m_hmd->GetProjectionRaw(vr::Eye_Left,
     &m_left_frus_left, &m_left_frus_right, &m_left_frus_top, &m_left_frus_bottom);
 
-  m_left_frus_left *= m_near_clip;
-  m_left_frus_right *= m_near_clip;
-  m_left_frus_top *= m_near_clip;
+  m_left_frus_left   *= m_near_clip;
+  m_left_frus_right  *= m_near_clip;
+  m_left_frus_top    *= m_near_clip;
   m_left_frus_bottom *= m_near_clip;
 
   m_hmd->GetProjectionRaw(vr::Eye_Right,
     &m_right_frus_left, &m_right_frus_right, &m_right_frus_top, &m_right_frus_bottom);
 
-  m_right_frus_left *= m_near_clip;
-  m_right_frus_right *= m_near_clip;
-  m_right_frus_top *= m_near_clip;
+  m_right_frus_left   *= m_near_clip;
+  m_right_frus_right  *= m_near_clip;
+  m_right_frus_top    *= m_near_clip;
   m_right_frus_bottom *= m_near_clip;
 
   vp.SetFrustumLeftRightSymmetry(false);
@@ -162,7 +161,7 @@ bool RhinoVrRenderer::Initialize()
 
   m_vp_orig_hmd_frus = vp;
 
-  int vp_width = vp.ScreenPortWidth();
+  int vp_width  = vp.ScreenPortWidth();
   int vp_height = vp.ScreenPortHeight();
 
   double frus_aspect;
@@ -203,14 +202,12 @@ ON_String GetTrackedDeviceString(vr::IVRSystem& hmd, vr::TrackedDeviceIndex_t de
 RhinoVrDeviceModel* RhinoVrRenderer::FindOrLoadRenderModel(const char* render_model_name)
 {
   if (m_render_models == nullptr)
-  {
     return nullptr;
-  }
 
   RhinoVrDeviceModel* render_model = nullptr;
   for (int i = 0; i < m_device_render_models.Count(); i++)
   {
-    RhinoVrDeviceModel* dm = m_device_render_models[i];
+    RhinoVrDeviceModel* dm = m_device_render_models[i].get();
 
     if (dm->GetName().EqualOrdinal(render_model_name, false))
     {
@@ -258,17 +255,14 @@ RhinoVrDeviceModel* RhinoVrRenderer::FindOrLoadRenderModel(const char* render_mo
       return nullptr;
     }
 
-    render_model = new RhinoVrDeviceModel(render_model_name);
+    std::unique_ptr<RhinoVrDeviceModel>& render_model_unique = m_device_render_models.AppendNew();
+    render_model_unique.reset(new RhinoVrDeviceModel(render_model_name));
+
+    render_model = render_model_unique.get();
     if (!render_model->Init(*model, *texture, m_unit_scale))
     {
-      delete render_model;
-      render_model = nullptr;
-
+      m_device_render_models.Remove();
       RhinoApp().Print("Unable to create Rhino Mesh model from render model %s\n", render_model_name);
-    }
-    else
-    {
-      m_device_render_models.Append(render_model);
     }
 
     m_render_models->FreeRenderModel(model);
@@ -354,11 +348,14 @@ void RhinoVrRenderer::SetupRenderModels()
     SetupRenderModelForDevice(device_idx);
   }
 
-  //m_hidden_area_mesh_left = LoadHiddenAreaMesh(vr::Eye_Left);
-  //m_hidden_area_mesh_right = LoadHiddenAreaMesh(vr::Eye_Right);
+  m_hidden_area_mesh_left = LoadHiddenAreaMesh(vr::Eye_Left);
+  m_hidden_area_mesh_right = LoadHiddenAreaMesh(vr::Eye_Right);
 }
 
-void RhinoVrRenderer::UpdateDeviceDisplayConduits(const ON_Xform& device_to_world)
+void RhinoVrRenderer::UpdateDeviceDisplayConduits(
+  const ON_Xform& camera_to_world_xform,
+  const ON_Xform& clip_to_left_eye_xform,
+  const ON_Xform& clip_to_right_eye_xform)
 {
   bool is_input_available = m_hmd->IsInputAvailable();
 
@@ -389,7 +386,7 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(const ON_Xform& device_to_worl
     }
 
     const ON_Mesh& device_mesh = device_model->m_device_mesh;
-    const ON_Xform device_xform = device_to_world * device_data.m_xform;
+    const ON_Xform device_xform = camera_to_world_xform * device_data.m_xform;
     CRhinoCacheHandle& device_cache_handle = device_model->m_cache_handle;
     
     ddc.SetDeviceMesh(&device_mesh);
@@ -403,22 +400,20 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(const ON_Xform& device_to_worl
     }
   }
 
-  //m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_area_mesh_left, vr::Eye_Left);
-  //m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_area_mesh_right, vr::Eye_Right);
+  m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_area_mesh_left, vr::Eye_Left);
+  m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_area_mesh_right, vr::Eye_Right);
 
-  //m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(m_clip_to_left_eye, vr::Eye_Left);
-  //m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(m_clip_to_right_eye, vr::Eye_Right);
+  m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(clip_to_left_eye_xform, vr::Eye_Left);
+  m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(clip_to_right_eye_xform, vr::Eye_Right);
 
-  //m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_area_mesh_left_cache_handle, vr::Eye_Left);
-  //m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_area_mesh_right_cache_handle, vr::Eye_Right);
+  m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_area_mesh_left_cache_handle, vr::Eye_Left);
+  m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_area_mesh_right_cache_handle, vr::Eye_Right);
 
-  //if (!m_hidden_mesh_display_conduit.IsEnabled())
-  //{
-  //  m_hidden_mesh_display_conduit.Enable(m_vr_doc_sn);
-  //}
+  if (!m_hidden_mesh_display_conduit.IsEnabled())
+  {
+    m_hidden_mesh_display_conduit.Enable(m_doc_sn);
+  }
 }
-
-bool IsKeyPressed(int uKey) { return ((::GetAsyncKeyState(uKey) & 0x8000) == 0x8000); }
 
 bool RhinoVrRenderer::UpdateState()
 {
@@ -485,24 +480,24 @@ bool RhinoVrRenderer::UpdateState()
   const ON_Viewport& rhino_vp = m_view->ActiveViewport().VP();
 
   ON_Viewport vp = m_vp_orig_hmd_frus;
-  vp.SetProjection(rhino_vp.Projection());
-  vp.SetCameraLocation(rhino_vp.CameraLocation());
+
+  vp.SetProjection     (rhino_vp.Projection()     );
+  vp.SetCameraLocation (rhino_vp.CameraLocation() );
   vp.SetCameraDirection(rhino_vp.CameraDirection());
-  vp.SetCameraUp(rhino_vp.CameraUp());
-  vp.SetTargetPoint(rhino_vp.TargetPoint());
+  vp.SetCameraUp       (rhino_vp.CameraUp()       );
+  vp.SetTargetPoint    (rhino_vp.TargetPoint()    );
+
   vp.SetFrustumNearFar(m_near_clip, m_far_clip);
 
   vp.DollyCamera(m_camera_translation);
   vp.DollyFrustum(m_camera_translation.z);
   vp.Rotate(m_camera_rotation, ON_3dVector::ZAxis, vp.CameraLocation());
 
-  vp.GetXform(ON::coordinate_system::camera_cs, ON::coordinate_system::world_cs, m_cam_to_world);
-  vp.GetXform(ON::coordinate_system::world_cs, ON::coordinate_system::camera_cs, m_world_to_cam);
-
-  UpdateDeviceDisplayConduits(m_cam_to_world);
+  vp.GetXform(ON::coordinate_system::camera_cs, ON::coordinate_system::world_cs, m_cam_to_world_xform);
+  vp.GetXform(ON::coordinate_system::world_cs, ON::coordinate_system::camera_cs, m_world_to_cam_xform);
 
   m_vp_hmd = vp;
-  ON_Xform cam_to_hmd_xform = m_cam_to_world * m_hmd_xform * m_world_to_cam;
+  ON_Xform cam_to_hmd_xform = m_cam_to_world_xform * m_hmd_xform * m_world_to_cam_xform;
 
   m_vp_hmd.Transform(cam_to_hmd_xform);
 
@@ -511,7 +506,7 @@ bool RhinoVrRenderer::UpdateState()
   // By default, the view is set to the HMD viewport.
   m_vr_vp->SetVP(m_vp_hmd, TRUE);
 
-  ON_Xform cam_to_left_eye_xform = m_cam_to_world * m_hmd_xform * m_cam_to_eye_xform_left * m_world_to_cam;
+  ON_Xform cam_to_left_eye_xform = m_cam_to_world_xform * m_hmd_xform * m_cam_to_left_eye_xform * m_world_to_cam_xform;
 
   m_vp_left_eye = vp;
 
@@ -521,9 +516,9 @@ bool RhinoVrRenderer::UpdateState()
     m_left_frus_top, m_left_frus_bottom,
     m_near_clip, m_far_clip);
 
-  m_vp_left_eye.GetXform(ON::coordinate_system::clip_cs, ON::coordinate_system::world_cs, m_clip_to_eye_xform_left);
+  m_vp_left_eye.GetXform(ON::coordinate_system::clip_cs, ON::coordinate_system::world_cs, m_clip_to_left_eye_xform);
 
-  ON_Xform cam_to_right_eye_xform = m_cam_to_world * m_hmd_xform * m_cam_to_eye_xform_right * m_world_to_cam;
+  ON_Xform cam_to_right_eye_xform = m_cam_to_world_xform * m_hmd_xform * m_cam_to_right_eye_xform * m_world_to_cam_xform;
 
   m_vp_right_eye = vp;
 
@@ -533,7 +528,9 @@ bool RhinoVrRenderer::UpdateState()
     m_right_frus_top, m_right_frus_bottom,
     m_near_clip, m_far_clip);
 
-  m_vp_right_eye.GetXform(ON::coordinate_system::clip_cs, ON::coordinate_system::world_cs, m_clip_to_eye_xform_right);
+  m_vp_right_eye.GetXform(ON::coordinate_system::clip_cs, ON::coordinate_system::world_cs, m_clip_to_right_eye_xform);
+
+  UpdateDeviceDisplayConduits(m_cam_to_world_xform, m_clip_to_left_eye_xform, m_clip_to_right_eye_xform);
 
   return true;
 }
@@ -605,23 +602,6 @@ void RhinoVrRenderer::ProcessVrEvent(const vr::VREvent_t & event)
   }
 }
 
-int SortObjRefBySeldist(const CRhinoObjRef* a, const CRhinoObjRef* b)
-{
-  double d = a->SelectionDistance() - b->SelectionDistance();
-  if (d < 0.0)
-    return -1; // a was closer to pick point
-  if (d > 0.0)
-    return 1;  // b was closer to pick point
-
-  d = a->SelectionDepth() - b->SelectionDepth();
-  if (d > 0.0)
-    return -1; // a was nearer to the camera
-  if (d < 0.0)
-    return 1;  // b was nearer to the camera
-
-  return 0;
-}
-
 bool RhinoVrRenderer::GetWorldPickLineAndClipRegion(
   const ON_Xform& device_xform,
   ON_Line& world_line,
@@ -634,7 +614,7 @@ bool RhinoVrRenderer::GetWorldPickLineAndClipRegion(
   line_vp.SetCameraLocation(ON_3dPoint::Origin);
   line_vp.SetCameraDirection(-ON_3dVector::ZAxis);
   line_vp.SetCameraUp(ON_3dVector::YAxis);
-  line_vp.Transform(m_cam_to_world*device_xform);
+  line_vp.Transform(m_cam_to_world_xform*device_xform);
 
   int l, r, b, t;
   line_vp.GetScreenPort(&l, &r, &b, &t);
@@ -792,6 +772,23 @@ void RhinoVrRenderer::RhinoVrOnMouseMove(const ON_Xform& picking_device_xform)
   }
 }
 
+int SortObjRefBySelDist(const CRhinoObjRef* a, const CRhinoObjRef* b)
+{
+  double d = a->SelectionDistance() - b->SelectionDistance();
+  if (d < 0.0)
+    return -1; // a was closer to pick point
+  if (d > 0.0)
+    return 1;  // b was closer to pick point
+
+  d = a->SelectionDepth() - b->SelectionDepth();
+  if (d > 0.0)
+    return -1; // a was nearer to the camera
+  if (d < 0.0)
+    return 1;  // b was nearer to the camera
+
+  return 0;
+}
+
 bool RhinoVrRenderer::RhinoVrGetIntersectingObject(const ON_Xform& picking_device_xform, const CRhinoObject*& isect_object, ON_3dPoint& isect_point)
 {
   ON_Viewport line_vp;
@@ -809,7 +806,7 @@ bool RhinoVrRenderer::RhinoVrGetIntersectingObject(const ON_Xform& picking_devic
     CRhinoObjRefArray rhino_objs;
     m_doc->PickObjects(pc, rhino_objs);
 
-    rhino_objs.QuickSort(SortObjRefBySeldist);
+    rhino_objs.QuickSort(SortObjRefBySelDist);
 
     if (rhino_objs.Count() > 0)
     {
@@ -1016,8 +1013,8 @@ bool RhinoVrRenderer::UpdateDeviceXforms()
   {
     m_hmd_xform = m_device_data[hmd_device_index].m_xform;
 
-    m_cam_to_eye_xform_left = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Left));
-    m_cam_to_eye_xform_right = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Right));
+    m_cam_to_left_eye_xform = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Left));
+    m_cam_to_right_eye_xform = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Right));
   }
 
   return true;

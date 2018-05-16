@@ -22,15 +22,20 @@ bool RhinoVrHiddenAreaMeshDisplayConduit::ExecConduit(CRhinoDisplayPipeline& dp,
     {
       if (m_pDisplayAttrs->m_bShadeSurface)
       {
-        //auto vr_render_context = m_pDisplayAttrs->GetVrRenderContext();
+        auto stereo_render_context = m_pDisplayAttrs->GetStereoRenderContext();
 
-        if (m_hidden_area_mesh_left)
+        if (m_hidden_area_mesh_left &&
+          (stereo_render_context == CDisplayPipelineAttributes::StereoRenderContext::RenderingLeftEye ||
+           stereo_render_context == CDisplayPipelineAttributes::StereoRenderContext::RenderingBothEyes))
         {
           dp.PushModelTransform(m_hidden_area_mesh_left_xform);
           dp.DrawMesh(*m_hidden_area_mesh_left, false, true, m_hidden_area_mesh_left_cache_handle);
           dp.PopModelTransform();
         }
-        else if (m_hidden_area_mesh_right)
+
+        if (m_hidden_area_mesh_right &&
+          (stereo_render_context == CDisplayPipelineAttributes::StereoRenderContext::RenderingRightEye ||
+           stereo_render_context == CDisplayPipelineAttributes::StereoRenderContext::RenderingBothEyes))
         {
           dp.PushModelTransform(m_hidden_area_mesh_right_xform);
           dp.DrawMesh(*m_hidden_area_mesh_right, false, true, m_hidden_area_mesh_right_cache_handle);
