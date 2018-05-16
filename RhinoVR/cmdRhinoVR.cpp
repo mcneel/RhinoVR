@@ -5,11 +5,28 @@
 #include "RhinoVrRenderer.h"
 #include "RhinoVRPlugIn.h"
 
-////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////
-//
-// BEGIN RhinoVR command
-//
+class RhinoVrMainLoopEventHook;
+
+struct RhinoVrStruct
+{
+  bool m_running = false;
+  RhinoVrRenderer* m_renderer = nullptr;
+  RhinoVrMainLoopEventHook* m_loop_hook = nullptr;
+} g_rhino_vr;
+
+class RhinoVrMainLoopEventHook : public CRhinoOnMainLoopEvent
+{
+public:
+  RhinoVrMainLoopEventHook(ON_UUID plugin_id) : CRhinoOnMainLoopEvent(plugin_id) {}
+
+  void Notify(const class CRhinoOnMainLoopEvent::CParameters& params) override
+  {
+    if (g_rhino_vr.m_running && g_rhino_vr.m_renderer)
+    {
+      g_rhino_vr.m_renderer->ProcessInputAndRenderFrame();
+    }
+  }
+};
 
 #pragma region RhinoVR command
 
@@ -31,33 +48,7 @@ public:
   CRhinoCommand::result RunCommand(const CRhinoCommandContext& context) override;
 };
 
-// The one and only CCommandRhinoVR object
-// Do NOT create any other instance of a CCommandRhinoVR class.
 static class CCommandRhinoVR theRhinoVRCommand;
-
-class RhinoVrMainLoopEventHook;
-
-struct RhinoVrStruct
-{
-  bool m_running = false;
-  RhinoVrRenderer* m_renderer = nullptr;
-  RhinoVrMainLoopEventHook* m_loop_hook = nullptr;
-} g_rhino_vr;
-
-
-class RhinoVrMainLoopEventHook : public CRhinoOnMainLoopEvent
-{
-public:
-  RhinoVrMainLoopEventHook(ON_UUID plugin_id) : CRhinoOnMainLoopEvent(plugin_id) {}
-
-  void Notify(const class CRhinoOnMainLoopEvent::CParameters& params) override
-  {
-    if (g_rhino_vr.m_running && g_rhino_vr.m_renderer)
-    {
-      g_rhino_vr.m_renderer->ProcessInputAndRenderFrame();
-    }
-  }
-};
 
 CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& context)
 {
@@ -100,9 +91,3 @@ CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& co
 }
 
 #pragma endregion
-
-//
-// END RhinoVR command
-//
-////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////

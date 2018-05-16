@@ -30,6 +30,12 @@
     <ClCompile Include="RhinoVrRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="RhinoVrDeviceDisplayConduit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="RhinoVrHiddenAreaMeshDisplayConduit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="RhinoVRApp.h">
@@ -48,6 +54,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="RhinoVrRenderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="RhinoVrDeviceDisplayConduit.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="RhinoVrHiddenAreaMeshDisplayConduit.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -1,10 +1,7 @@
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "RhinoVrRenderer.h"
 
 #pragma comment(lib, "../OpenVR/lib/win64/openvr_api.lib")
-
-void RhinoVrPostDigitizerEvent(ON_3dRay ray, LPARAM nFlags);
-void RhinoVrPostGetObjectEvent(CRhinoGetObject* go, CRhinoView* view);
 
 RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   : m_doc_sn(doc_sn)
@@ -751,7 +748,7 @@ void RhinoVrRenderer::RhinoVrGetPoint(const ON_Xform& picking_device_xform)
 
       LPARAM nFlags = 0;
 
-      RhinoVrPostDigitizerEvent(ray, nFlags);
+      m_view->PostDigitizerPointEvent(ray, nFlags);
     }
 
     rhino_vp.SetVP(orig_vp, TRUE);
@@ -867,10 +864,11 @@ bool RhinoVrRenderer::HandleInput()
           if (m_doc->InGetObject())
           {
             CRhinoGetObject* go = m_doc->InGetObject();
+
             CRhinoObjRefArray& obj_ref_array = const_cast<CRhinoObjRefArray&>(go->PickList());
             obj_ref_array.Append(CRhinoObjRef(isect_object));
 
-            RhinoVrPostGetObjectEvent(go, m_view);
+            go->PostObjectSelectionChangedEvent(m_view);
           }
           else
           {
@@ -1023,220 +1021,6 @@ bool RhinoVrRenderer::UpdateDeviceXforms()
   }
 
   return true;
-}
-
-RhinoVrDeviceDisplayConduit::RhinoVrDeviceDisplayConduit()
-  : CRhinoDisplayConduit(
-    CSupportChannels::SC_CALCCLIPPINGPLANES |
-    CSupportChannels::SC_CALCBOUNDINGBOX |
-    CSupportChannels::SC_POSTDRAWOBJECTS)
-  , m_frus_near_suggestion(-1.0)
-  , m_frus_far_suggestion(-1.0)
-  , m_draw_device_mesh(false)
-  , m_device_mesh(nullptr)
-  , m_device_mesh_xform(ON_Xform::IdentityTransformation)
-  , m_device_cache_handle(nullptr)
-  , m_bounding_box(ON_BoundingBox::UnsetBoundingBox)
-{
-}
-
-bool RhinoVrDeviceDisplayConduit::ExecConduit(
-  CRhinoDisplayPipeline&  dp,
-  UINT                    nActiveChannel,
-  bool&                   bTerminateChannel)
-{
-  if (m_draw_device_mesh)
-  {
-    if (nActiveChannel == CSupportChannels::SC_CALCCLIPPINGPLANES)
-    {
-      if (m_frus_near_suggestion >= 0.0 && m_frus_near_suggestion >= 0.0)
-      {
-        m_pChannelAttrs->m_dNear = m_frus_near_suggestion;
-        m_pChannelAttrs->m_dFar = m_frus_far_suggestion;
-      }
-    }
-    else if (nActiveChannel == CSupportChannels::SC_CALCBOUNDINGBOX)
-    {
-      ON_BoundingBox xformed_bb = m_bounding_box;
-      xformed_bb.Transform(m_device_mesh_xform);
-
-      m_pChannelAttrs->m_BoundingBox.Union(xformed_bb);
-    }
-    else if (nActiveChannel == CSupportChannels::SC_POSTDRAWOBJECTS)
-    {
-      if (m_pDisplayAttrs->m_bShadeSurface)
-      {
-        dp.PushModelTransform(m_device_mesh_xform);
-
-        for (int i = 0; i < m_start_pts.Count(); ++i)
-        {
-          dp.DrawLine(m_start_pts[i], m_end_pts[i], m_colors[i]);
-        }
-
-        dp.DrawMesh(*m_device_mesh, false, true, m_device_cache_handle);
-
-        dp.PopModelTransform();
-      }
-    }
-  }
-
-  return true;
-}
-
-void RhinoVrDeviceDisplayConduit::Enable(unsigned int uiDocSerialNumber)
-{
-  CRhinoDisplayConduit::Enable(uiDocSerialNumber);
-}
-
-void RhinoVrDeviceDisplayConduit::SetDeviceMesh(const ON_Mesh* device_mesh)
-{
-  m_device_mesh = device_mesh;
-
-  if (device_mesh)
-  {
-    m_draw_device_mesh = true;
-    m_bounding_box.Union(device_mesh->BoundingBox());
-  }
-}
-
-void RhinoVrDeviceDisplayConduit::SetDeviceMeshXform(const ON_Xform& device_xform)
-{
-  m_device_mesh_xform = device_xform;
-}
-
-void RhinoVrDeviceDisplayConduit::SetDeviceMeshCacheHandle(CRhinoCacheHandle* cache_handle)
-{
-  m_device_cache_handle = cache_handle;
-}
-
-void RhinoVrDeviceDisplayConduit::SetFrustumNearFarSuggestion(double frus_near, double frus_far)
-{
-  if (frus_near > 0.0 && frus_far > frus_near)
-  {
-    m_frus_near_suggestion = frus_near;
-    m_frus_far_suggestion = frus_far;
-  }
-  else
-  {
-    m_frus_near_suggestion = m_frus_far_suggestion = -1.0;
-  }
-}
-
-void RhinoVrDeviceDisplayConduit::AddLine(const ON_3dPoint& from, const ON_3dPoint& to, const ON_Color& color)
-{
-  m_start_pts.Append(from);
-  m_end_pts.Append(to);
-  m_colors.Append(color);
-
-  m_bounding_box.Set(from, TRUE);
-  m_bounding_box.Set(to, TRUE);
-}
-
-void RhinoVrDeviceDisplayConduit::Empty()
-{
-  m_start_pts.Empty();
-  m_end_pts.Empty();
-  m_colors.Empty();
-
-  m_bounding_box = ON_BoundingBox::EmptyBoundingBox;
-
-  m_draw_device_mesh = false;
-  m_device_mesh = nullptr;
-}
-
-RhinoVrHiddenAreaMeshDisplayConduit::RhinoVrHiddenAreaMeshDisplayConduit()
-  : CRhinoDisplayConduit(
-    CSupportChannels::SC_PREDRAWOBJECTS)
-  , m_draw_hidden_area_mesh(false)
-  , m_hidden_area_mesh_left(nullptr)
-  , m_hidden_area_mesh_right(nullptr)
-  , m_hidden_area_mesh_left_xform(ON_Xform::IdentityTransformation)
-  , m_hidden_area_mesh_right_xform(ON_Xform::IdentityTransformation)
-  , m_hidden_area_mesh_left_cache_handle(nullptr)
-  , m_hidden_area_mesh_right_cache_handle(nullptr)
-{
-}
-
-bool RhinoVrHiddenAreaMeshDisplayConduit::ExecConduit(CRhinoDisplayPipeline & dp, UINT nActiveChannel, bool & bTerminateChannel)
-{
-  if (m_draw_hidden_area_mesh)
-  {
-    if (nActiveChannel == CSupportChannels::SC_PREDRAWOBJECTS)
-    {
-      if (m_pDisplayAttrs->m_bShadeSurface)
-      {
-        //auto vr_render_context = m_pDisplayAttrs->GetVrRenderContext();
-
-        if (m_hidden_area_mesh_left)
-        {
-          dp.PushModelTransform(m_hidden_area_mesh_left_xform);
-          dp.DrawMesh(*m_hidden_area_mesh_left, false, true, m_hidden_area_mesh_left_cache_handle);
-          dp.PopModelTransform();
-        }
-        else if (m_hidden_area_mesh_right)
-        {
-          dp.PushModelTransform(m_hidden_area_mesh_right_xform);
-          dp.DrawMesh(*m_hidden_area_mesh_right, false, true, m_hidden_area_mesh_right_cache_handle);
-          dp.PopModelTransform();
-        }
-      }
-    }
-  }
-
-  return true;
-}
-
-void RhinoVrHiddenAreaMeshDisplayConduit::Enable(unsigned int uiDocSerialNumber)
-{
-  CRhinoDisplayConduit::Enable(uiDocSerialNumber);
-}
-
-void RhinoVrHiddenAreaMeshDisplayConduit::SetHiddenAreaMesh(const ON_Mesh* hidden_area_mesh, vr::EVREye eye)
-{
-  if (eye == vr::Eye_Left)
-  {
-    m_hidden_area_mesh_left = hidden_area_mesh;
-  }
-  else
-  {
-    m_hidden_area_mesh_right = hidden_area_mesh;
-  }
-
-  if (m_hidden_area_mesh_left && m_hidden_area_mesh_right)
-  {
-    m_draw_hidden_area_mesh = true;
-  }
-}
-
-void RhinoVrHiddenAreaMeshDisplayConduit::SetHiddenAreaMeshXform(const ON_Xform & hidden_area_mesh_xform, vr::EVREye eye)
-{
-  if (eye == vr::Eye_Left)
-  {
-    m_hidden_area_mesh_left_xform = hidden_area_mesh_xform;
-  }
-  else
-  {
-    m_hidden_area_mesh_right_xform = hidden_area_mesh_xform;
-  }
-}
-
-void RhinoVrHiddenAreaMeshDisplayConduit::SetHiddenAreaMeshCacheHandle(CRhinoCacheHandle* cache_handle, vr::EVREye eye)
-{
-  if (eye == vr::Eye_Left)
-  {
-    m_hidden_area_mesh_left_cache_handle = cache_handle;
-  }
-  else
-  {
-    m_hidden_area_mesh_right_cache_handle = cache_handle;
-  }
-}
-
-void RhinoVrHiddenAreaMeshDisplayConduit::Empty()
-{
-  m_draw_hidden_area_mesh = false;
-  m_hidden_area_mesh_left = nullptr;
-  m_hidden_area_mesh_right = nullptr;
 }
 
 RhinoVrDeviceModel::RhinoVrDeviceModel(const ON_String& sRenderModelName)

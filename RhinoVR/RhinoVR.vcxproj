@@ -13,6 +13,8 @@
   <ItemGroup>
     <ClCompile Include="cmdRhinoVR.cpp" />
     <ClCompile Include="RhinoVRApp.cpp" />
+    <ClCompile Include="RhinoVrDeviceDisplayConduit.cpp" />
+    <ClCompile Include="RhinoVrHiddenAreaMeshDisplayConduit.cpp" />
     <ClCompile Include="RhinoVRPlugIn.cpp" />
     <ClCompile Include="RhinoVrRenderer.cpp" />
     <ClCompile Include="stdafx.cpp">
@@ -23,6 +25,8 @@
   <ItemGroup>
     <ClInclude Include="Resource.h" />
     <ClInclude Include="RhinoVRApp.h" />
+    <ClInclude Include="RhinoVrDeviceDisplayConduit.h" />
+    <ClInclude Include="RhinoVrHiddenAreaMeshDisplayConduit.h" />
     <ClInclude Include="RhinoVRPlugIn.h" />
     <ClInclude Include="RhinoVrRenderer.h" />
     <ClInclude Include="stdafx.h" />
