@@ -10,6 +10,7 @@ RhinoVrDeviceDisplayConduit::RhinoVrDeviceDisplayConduit()
   , m_frus_far_suggestion(-1.0)
   , m_draw_device_mesh(false)
   , m_device_mesh(nullptr)
+  , m_device_material(nullptr)
   , m_device_mesh_xform(ON_Xform::IdentityTransformation)
   , m_device_cache_handle(nullptr)
   , m_bounding_box(ON_BoundingBox::UnsetBoundingBox)
@@ -49,7 +50,7 @@ bool RhinoVrDeviceDisplayConduit::ExecConduit(
           dp.DrawLine(m_start_pts[i], m_end_pts[i], m_colors[i]);
         }
 
-        dp.DrawMesh(*m_device_mesh, false, true, m_device_cache_handle);
+        dp.DrawShadedMeshes(&m_device_mesh, 1, m_device_material, &m_device_cache_handle);
 
         dp.PopModelTransform();
       }
@@ -73,6 +74,11 @@ void RhinoVrDeviceDisplayConduit::SetDeviceMesh(const ON_Mesh* device_mesh)
     m_draw_device_mesh = true;
     m_bounding_box.Union(device_mesh->BoundingBox());
   }
+}
+
+void RhinoVrDeviceDisplayConduit::SetDeviceMaterial(const CDisplayPipelineMaterial* device_material)
+{
+  m_device_material = device_material;
 }
 
 void RhinoVrDeviceDisplayConduit::SetDeviceMeshXform(const ON_Xform& device_xform)
@@ -118,4 +124,5 @@ void RhinoVrDeviceDisplayConduit::Empty()
 
   m_draw_device_mesh = false;
   m_device_mesh = nullptr;
+  m_device_material = nullptr;
 }

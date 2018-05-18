@@ -9,6 +9,7 @@ public:
   void Enable(unsigned int uiDocSerialNumber);
 
   void SetDeviceMesh(const ON_Mesh* device_mesh);
+  void SetDeviceMaterial(const CDisplayPipelineMaterial* device_material);
   void SetDeviceMeshXform(const ON_Xform& device_xform);
   void SetDeviceMeshCacheHandle(CRhinoCacheHandle* cache_handle);
 
@@ -29,6 +30,7 @@ private:
   bool m_draw_device_mesh;
 
   const ON_Mesh* m_device_mesh;
+  const CDisplayPipelineMaterial* m_device_material;
   ON_Xform m_device_mesh_xform;
   CRhinoCacheHandle* m_device_cache_handle;
 

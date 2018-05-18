@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "RhinoVrRenderer.h"
+#include <gl/GL.h>
 
 #pragma comment(lib, "../OpenVR/lib/win64/openvr_api.lib")
 
@@ -28,6 +29,8 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   , m_camera_rotation(0.0)
   , m_hmd_location_correction_acquired(false)
   , m_unit_scale(1.0)
+  , m_frame_start_timestamp(0)
+  , m_frames_since_last_fps_report(0)
 {
   memset(m_device_poses, 0, sizeof(m_device_poses));
   
@@ -87,11 +90,9 @@ bool RhinoVrRenderer::Initialize()
     return false;
   }
 
-  CRhinoDoc* rhino_doc = CRhinoDoc::FromRuntimeSerialNumber(m_doc_sn);
+  CRhinoDoc* rhino_doc = m_doc = CRhinoDoc::FromRuntimeSerialNumber(m_doc_sn);
   if (rhino_doc == nullptr)
-  {
     return false;
-  }
   
   m_unit_scale = rhino_doc->ModelUnits().MetersPerUnit();
   m_pointer_line = ON_Line(m_unit_scale*ON_3dPoint(0, 0, -0.02f), m_unit_scale*ON_3dPoint(0, 0, -500.0f));
@@ -201,7 +202,7 @@ ON_String GetTrackedDeviceString(vr::IVRSystem& hmd, vr::TrackedDeviceIndex_t de
 
 RhinoVrDeviceModel* RhinoVrRenderer::FindOrLoadRenderModel(const char* render_model_name)
 {
-  if (m_render_models == nullptr)
+  if (m_render_models == nullptr || m_doc == nullptr)
     return nullptr;
 
   RhinoVrDeviceModel* render_model = nullptr;
@@ -259,7 +260,7 @@ RhinoVrDeviceModel* RhinoVrRenderer::FindOrLoadRenderModel(const char* render_mo
     render_model_unique.reset(new RhinoVrDeviceModel(render_model_name));
 
     render_model = render_model_unique.get();
-    if (!render_model->Init(*model, *texture, m_unit_scale))
+    if (!render_model->Init(*model, *texture, m_unit_scale, *m_doc))
     {
       m_device_render_models.Remove();
       RhinoApp().Print("Unable to create Rhino Mesh model from render model %s\n", render_model_name);
@@ -386,10 +387,12 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
     }
 
     const ON_Mesh& device_mesh = device_model->m_device_mesh;
+    const CDisplayPipelineMaterial& device_material = device_model->m_device_material;
     const ON_Xform device_xform = camera_to_world_xform * device_data.m_xform;
     CRhinoCacheHandle& device_cache_handle = device_model->m_cache_handle;
     
     ddc.SetDeviceMesh(&device_mesh);
+    ddc.SetDeviceMaterial(&device_material);
     ddc.SetDeviceMeshXform(device_xform);
     ddc.SetDeviceMeshCacheHandle(&device_cache_handle);
 
@@ -548,14 +551,14 @@ bool RhinoVrRenderer::Draw()
   unsigned long long eye_left_handle = 0;
   unsigned long long eye_right_handle = 0;
 
+  m_vr_dp->OpenPipeline();
+
   bool draw_success = m_vr_dp_ogl->DrawStereoFrameBuffer(*vr_dpa, m_vp_left_eye, m_vp_right_eye, eye_left_handle, eye_right_handle);
   
   if (!draw_success)
     return false;
 
   vr::EVRCompositorError ovr_error = vr::VRCompositorError_None;
-
-  m_vr_dp->OpenPipeline();
 
   vr::Texture_t leftEyeTexture = { (void*)(uintptr_t)eye_left_handle, vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
   ovr_error = m_compositor->Submit(vr::Eye_Left, &leftEyeTexture);
@@ -574,6 +577,8 @@ bool RhinoVrRenderer::Draw()
 
     return false;
   }
+
+  MeasureFramesPerSecond();
 
   m_vr_dp->ClosePipeline();
 
@@ -913,6 +918,37 @@ bool RhinoVrRenderer::HandleInput()
   return true;
 }
 
+void RhinoVrRenderer::MeasureFramesPerSecond()
+{
+  glFlush();
+  glFinish();
+
+  if (m_frame_start_timestamp == 0)
+  {
+    m_frame_start_timestamp = RhinoGetTimestamp();
+  }
+
+  if (m_frame_start_timestamp > 0)
+  {
+    m_frames_since_last_fps_report++;
+
+    double frame_time_in_seconds = RhinoGetTimeInSecondsSince(m_frame_start_timestamp);
+
+    if (frame_time_in_seconds >= 1.0)
+    {
+      double frames_per_second = m_frames_since_last_fps_report / frame_time_in_seconds;
+
+      ON_wString fps_output;
+      fps_output.Format(L"FPS: %.1f\n", frames_per_second);
+
+      OutputDebugString(fps_output.Array());
+
+      m_frames_since_last_fps_report = 0;
+      m_frame_start_timestamp = RhinoGetTimestamp();
+    }
+  }
+}
+
 void RhinoVrRenderer::ProcessInputAndRenderFrame()
 {
   if (AttachDocAndView())
@@ -986,6 +1022,7 @@ bool RhinoVrRenderer::UpdateDeviceXforms()
 
   const uint32_t hmd_device_index = vr::k_unTrackedDeviceIndex_Hmd;
 
+  // WaitGetPoses waits for vertical sync
   m_compositor->WaitGetPoses(m_device_poses, vr::k_unMaxTrackedDeviceCount, nullptr, 0);
 
   vr::TrackedDevicePose_t& hmd_device_pose = m_device_poses[hmd_device_index];
@@ -1025,7 +1062,11 @@ RhinoVrDeviceModel::RhinoVrDeviceModel(const ON_String& sRenderModelName)
 {
 }
 
-bool RhinoVrDeviceModel::Init(const vr::RenderModel_t& model, const vr::RenderModel_TextureMap_t& diffuse_texture, double unit_scale)
+bool RhinoVrDeviceModel::Init(
+  const vr::RenderModel_t& model,
+  const vr::RenderModel_TextureMap_t& diffuse_texture,
+  double unit_scale,
+  const CRhinoDoc& doc)
 {
   m_device_mesh.Destroy();
   m_device_mesh.m_V.SetCapacity(model.unVertexCount);
@@ -1060,28 +1101,40 @@ bool RhinoVrDeviceModel::Init(const vr::RenderModel_t& model, const vr::RenderMo
     triangle.vi[3] = triangle.vi[2];
   }
 
-  //// create and populate the texture
-  //glGenTextures(1, &m_glTexture);
-  //glBindTexture(GL_TEXTURE_2D, m_glTexture);
+  CRhinoDib texture_dib(diffuse_texture.unWidth, diffuse_texture.unHeight, 32);
 
-  //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, vrDiffuseTexture.unWidth, vrDiffuseTexture.unHeight,
-  //  0, GL_RGBA, GL_UNSIGNED_BYTE, vrDiffuseTexture.rubTextureMapData);
+  texture_dib.ProcessPixels_SingleThreaded(
+    [](CRhinoDib::Pixel& pixel, void* pvData)
+    {
+      auto texdata = (const vr::RenderModel_TextureMap_t*)pvData;
+      size_t offset = (size_t)(4*(pixel.y*texdata->unWidth + pixel.x));
+      const uint8_t* data_offset = texdata->rubTextureMapData + offset;
+      
+      unsigned char r = (unsigned char)data_offset[0];
+      unsigned char g = (unsigned char)data_offset[1];
+      unsigned char b = (unsigned char)data_offset[2];
+      unsigned char a = (unsigned char)data_offset[3];
 
-  //// If this renders black ask McJohn what's wrong.
-  //glGenerateMipmap(GL_TEXTURE_2D);
+      pixel.Set(r, g, b, a);
+    },
+    (void*)&diffuse_texture );
 
-  //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+  
+  auto* rdk_texture = ::RhRdkNewDibTexture(&texture_dib, &doc);
 
-  //GLfloat fLargest;
-  //glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &fLargest);
-  //glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, fLargest);
+  auto* rdk_material = new CRhRdkBasicMaterial();
+  rdk_material->Initialize();
 
-  //glBindTexture(GL_TEXTURE_2D, 0);
+  ON_wString child_slot_name = rdk_material->TextureChildSlotName(CRhRdkMaterial::ChildSlotUsage::Diffuse);
 
-  //m_unVertexCount = vrModel.unTriangleCount * 3;
+  rdk_material->SetChild(rdk_texture, child_slot_name);
+  rdk_material->SetChildSlotOn(child_slot_name, true);
+  rdk_material->SetChildSlotAmount(child_slot_name, 100.0);
+
+  m_device_material = rdk_material->SimulatedMaterial();
+
+  rdk_material->Uninitialize();
+  delete rdk_material;
 
   return true;
 }

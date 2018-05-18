@@ -9,11 +9,16 @@ class RhinoVrDeviceModel
 {
 public:
   RhinoVrDeviceModel(const ON_String& sRenderModelName);
-  bool Init(const vr::RenderModel_t & vrModel, const vr::RenderModel_TextureMap_t & vrDiffuseTexture, double unit_scale);
+  bool Init(
+    const vr::RenderModel_t& vrModel,
+    const vr::RenderModel_TextureMap_t& vrDiffuseTexture,
+    double unit_scale,
+    const CRhinoDoc& doc);
   const ON_String& GetName() const;
 
   ON_String m_device_name;
   ON_Mesh m_device_mesh;
+  CDisplayPipelineMaterial m_device_material;
   CRhinoCacheHandle m_cache_handle;
 };
 
@@ -78,6 +83,7 @@ protected:
   bool Draw();
   bool HandleInput();
   bool UpdateState();
+  void MeasureFramesPerSecond();
   void GetRhinoVrControllerState(const vr::VRControllerState_t& state, RhinoVrDeviceController& controller);
   void ProcessVrEvent(const vr::VREvent_t & event);
 
@@ -167,6 +173,9 @@ protected:
   CRhinoCacheHandle m_hidden_area_mesh_right_cache_handle;
 
   RhinoVrHiddenAreaMeshDisplayConduit m_hidden_mesh_display_conduit;
+
+  RhTimestamp m_frame_start_timestamp;
+  int m_frames_since_last_fps_report;
 
 private:
   vr::IVRSystem* m_hmd;
