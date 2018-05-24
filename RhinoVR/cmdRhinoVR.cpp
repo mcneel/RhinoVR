@@ -5,13 +5,11 @@
 #include "RhinoVrRenderer.h"
 #include "RhinoVRPlugIn.h"
 
-class RhinoVrMainLoopEventHook;
-
 struct RhinoVrStruct
 {
   bool m_running = false;
   RhinoVrRenderer* m_renderer = nullptr;
-  RhinoVrMainLoopEventHook* m_loop_hook = nullptr;
+  class RhinoVrMainLoopEventHook* m_loop_hook = nullptr;
 } g_rhino_vr;
 
 class RhinoVrMainLoopEventHook : public CRhinoOnMainLoopEvent

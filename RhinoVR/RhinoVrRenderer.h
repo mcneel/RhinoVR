@@ -80,10 +80,12 @@ protected:
 
   bool AttachDocAndView();
   void DetachDocAndView();
-  bool Draw();
-  bool HandleInput();
+  
+  bool UpdatePosesAndWaitForVSync();
   bool UpdateState();
-  void MeasureFramesPerSecond();
+  bool HandleInput();
+  bool Draw();
+
   void GetRhinoVrControllerState(const vr::VRControllerState_t& state, RhinoVrDeviceController& controller);
   void ProcessVrEvent(const vr::VREvent_t & event);
 
@@ -173,9 +175,6 @@ protected:
   CRhinoCacheHandle m_hidden_area_mesh_right_cache_handle;
 
   RhinoVrHiddenAreaMeshDisplayConduit m_hidden_mesh_display_conduit;
-
-  RhTimestamp m_frame_start_timestamp;
-  int m_frames_since_last_fps_report;
 
 private:
   vr::IVRSystem* m_hmd;

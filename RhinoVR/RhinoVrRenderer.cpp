@@ -1,6 +1,5 @@
 #include "stdafx.h"
 #include "RhinoVrRenderer.h"
-#include <gl/GL.h>
 
 #pragma comment(lib, "../OpenVR/lib/win64/openvr_api.lib")
 
@@ -29,8 +28,6 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   , m_camera_rotation(0.0)
   , m_hmd_location_correction_acquired(false)
   , m_unit_scale(1.0)
-  , m_frame_start_timestamp(0)
-  , m_frames_since_last_fps_report(0)
 {
   memset(m_device_poses, 0, sizeof(m_device_poses));
   
@@ -40,6 +37,10 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
 
 RhinoVrRenderer::~RhinoVrRenderer()
 {
+  CWnd* main_window = CWnd::FromHandle(RhinoApp().MainWnd());
+  if (main_window)
+    main_window->KillTimer(2029);
+
   m_hmd = nullptr;
   m_render_models = nullptr;
   m_compositor = nullptr;
@@ -180,6 +181,18 @@ bool RhinoVrRenderer::Initialize()
 
   view->ActiveViewport().SetVP(vp, TRUE);
   view->Redraw();
+
+  // ATTENTION: The following lines are a (hopefully temporary) hack.
+  // Rhino uses MFC, and MFC has a main message loop which calls
+  // GetMessage(). If there are no messages in the message queue,
+  // GetMessage() will block until it finds a message. This is
+  // unacceptable since we want Rhino/MFC to call into RhinoVR as
+  // quickly and often as possible. To get around this, we start a
+  // timer which will always put a WM_TIMER message in the message
+  // queue if it is empty.
+  CWnd* main_window = CWnd::FromHandle(RhinoApp().MainWnd());
+  if(main_window)
+    main_window->SetTimer(2029, 0, NULL);
 
   return true;
 }
@@ -418,6 +431,17 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
   }
 }
 
+bool RhinoVrRenderer::UpdatePosesAndWaitForVSync()
+{
+  if (m_compositor == nullptr)
+    return false;
+
+  // WaitGetPoses waits for vertical sync
+  m_compositor->WaitGetPoses(m_device_poses, vr::k_unMaxTrackedDeviceCount, nullptr, 0);
+
+  return true;
+}
+
 bool RhinoVrRenderer::UpdateState()
 {
   if (m_view == nullptr || m_doc == nullptr)
@@ -551,12 +575,12 @@ bool RhinoVrRenderer::Draw()
   unsigned long long eye_left_handle = 0;
   unsigned long long eye_right_handle = 0;
 
-  m_vr_dp->OpenPipeline();
-
   bool draw_success = m_vr_dp_ogl->DrawStereoFrameBuffer(*vr_dpa, m_vp_left_eye, m_vp_right_eye, eye_left_handle, eye_right_handle);
   
   if (!draw_success)
     return false;
+
+  m_vr_dp->OpenPipeline();
 
   vr::EVRCompositorError ovr_error = vr::VRCompositorError_None;
 
@@ -577,8 +601,6 @@ bool RhinoVrRenderer::Draw()
 
     return false;
   }
-
-  MeasureFramesPerSecond();
 
   m_vr_dp->ClosePipeline();
 
@@ -918,41 +940,13 @@ bool RhinoVrRenderer::HandleInput()
   return true;
 }
 
-void RhinoVrRenderer::MeasureFramesPerSecond()
-{
-  glFlush();
-  glFinish();
-
-  if (m_frame_start_timestamp == 0)
-  {
-    m_frame_start_timestamp = RhinoGetTimestamp();
-  }
-
-  if (m_frame_start_timestamp > 0)
-  {
-    m_frames_since_last_fps_report++;
-
-    double frame_time_in_seconds = RhinoGetTimeInSecondsSince(m_frame_start_timestamp);
-
-    if (frame_time_in_seconds >= 1.0)
-    {
-      double frames_per_second = m_frames_since_last_fps_report / frame_time_in_seconds;
-
-      ON_wString fps_output;
-      fps_output.Format(L"FPS: %.1f\n", frames_per_second);
-
-      OutputDebugString(fps_output.Array());
-
-      m_frames_since_last_fps_report = 0;
-      m_frame_start_timestamp = RhinoGetTimestamp();
-    }
-  }
-}
-
 void RhinoVrRenderer::ProcessInputAndRenderFrame()
 {
   if (AttachDocAndView())
   {
+    if (!UpdatePosesAndWaitForVSync())
+      return;
+
     if (!UpdateState())
       return;
 
@@ -1017,13 +1011,10 @@ ON_Xform RhinoVrRenderer::OpenVrMatrixToXform(const vr::HmdMatrix34_t &mat)
 
 bool RhinoVrRenderer::UpdateDeviceXforms()
 {
-  if (m_hmd == nullptr || m_compositor == nullptr)
+  if (m_hmd == nullptr)
     return false;
 
   const uint32_t hmd_device_index = vr::k_unTrackedDeviceIndex_Hmd;
-
-  // WaitGetPoses waits for vertical sync
-  m_compositor->WaitGetPoses(m_device_poses, vr::k_unMaxTrackedDeviceCount, nullptr, 0);
 
   vr::TrackedDevicePose_t& hmd_device_pose = m_device_poses[hmd_device_index];
 
