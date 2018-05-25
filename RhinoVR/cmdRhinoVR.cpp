@@ -1,7 +1,4 @@
-// cmdRhinoVR.cpp : command file
-//
-
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "RhinoVrRenderer.h"
 #include "RhinoVRPlugIn.h"
 
@@ -26,9 +23,7 @@ public:
   }
 };
 
-#pragma region RhinoVR command
-
-class CCommandRhinoVR : public CRhinoCommand
+class CCommandRhinoVR : public CRhinoCommand, private CRhinoEventWatcher
 {
 public:
   CCommandRhinoVR() = default;
@@ -44,6 +39,10 @@ public:
   const wchar_t* EnglishCommandName() override { return L"RhinoVR"; }
 
   CRhinoCommand::result RunCommand(const CRhinoCommandContext& context) override;
+
+  void RhinoVrTearDown();
+
+  void OnCloseDocument(CRhinoDoc& doc) override;
 };
 
 static class CCommandRhinoVR theRhinoVRCommand;
@@ -52,13 +51,7 @@ CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& co
 {
   if (g_rhino_vr.m_running)
   {
-    g_rhino_vr.m_running = false;
-
-    delete g_rhino_vr.m_loop_hook;
-    g_rhino_vr.m_loop_hook = nullptr;
-
-    delete g_rhino_vr.m_renderer;
-    g_rhino_vr.m_renderer = nullptr;
+    RhinoVrTearDown();
 
     return CRhinoCommand::success;
   }
@@ -67,10 +60,10 @@ CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& co
   if (rhino_view == nullptr)
     return CRhinoCommand::failure;
 
-  unsigned int vr_doc_sn = context.m_rhino_doc_sn;
-  unsigned int vr_view_sn = rhino_view->RuntimeSerialNumber();
+  unsigned int doc_sn = context.m_rhino_doc_sn;
+  unsigned int view_sn = rhino_view->RuntimeSerialNumber();
 
-  g_rhino_vr.m_renderer = new RhinoVrRenderer(vr_doc_sn, vr_view_sn);
+  g_rhino_vr.m_renderer = new RhinoVrRenderer(doc_sn, view_sn);
 
   if (!g_rhino_vr.m_renderer->Initialize())
   {
@@ -85,7 +78,32 @@ CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& co
 
   g_rhino_vr.m_running = true;
 
+  // Event watcher
+  Register();
+  Enable(TRUE);
+
   return CRhinoCommand::success;
 }
 
-#pragma endregion
+void CCommandRhinoVR::OnCloseDocument(CRhinoDoc& doc)
+{
+  if (g_rhino_vr.m_running)
+  {
+    RhinoVrTearDown();
+  }
+}
+
+void CCommandRhinoVR::RhinoVrTearDown()
+{
+  g_rhino_vr.m_running = false;
+
+  delete g_rhino_vr.m_loop_hook;
+  g_rhino_vr.m_loop_hook = nullptr;
+
+  delete g_rhino_vr.m_renderer;
+  g_rhino_vr.m_renderer = nullptr;
+
+  // Event watcher
+  Enable(FALSE);
+  UnRegister();
+}
