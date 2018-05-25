@@ -67,28 +67,27 @@ bool RhinoVrRenderer::Initialize()
 
   if (m_hmd == nullptr || ovr_error != vr::VRInitError_None)
   {
-    char buf[1024];
-    sprintf_s(buf, sizeof(buf), "Unable to init VR runtime: %s", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
-    RhinoApp().Print(buf);
+    ON_wString str;
+    str.Format(L"Unable to initialize VR runtime: %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
+    RhinoApp().Print(str);
     return false;
   }
 
   m_render_models = (vr::IVRRenderModels*) vr::VR_GetGenericInterface(vr::IVRRenderModels_Version, &ovr_error);
   if (m_render_models == nullptr || ovr_error != vr::VRInitError_None)
   {
-    char buf[1024];
-    sprintf_s(buf, sizeof(buf), "Unable to get render model interface: %s", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
-    RhinoApp().Print(buf);
+    ON_wString str;
+    str.Format(L"Unable to get render models interface: %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
+    RhinoApp().Print(str);
     return false;
   }
 
   m_compositor = (vr::IVRCompositor*) vr::VR_GetGenericInterface(vr::IVRCompositor_Version, &ovr_error);
   if (m_compositor == nullptr || ovr_error != vr::VRInitError_None)
   {
-    char buf[1024];
-    sprintf_s(buf, sizeof(buf), "Unable to init VR compositor: %s", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
-    RhinoApp().Print(buf);
-    return false;
+    ON_wString str;
+    str.Format(L"Unable to initialize VR compositor : %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
+    RhinoApp().Print(str);
   }
 
   CRhinoDoc* rhino_doc = m_doc = CRhinoDoc::FromRuntimeSerialNumber(m_doc_sn);
@@ -132,9 +131,7 @@ bool RhinoVrRenderer::Initialize()
 
   ON_Viewport vp = m_vp_orig = m_vr_dp->VP();
 
-  double l, r, b, t, n, f;
-  vp.GetFrustum(&l, &r, &b, &t, &n, &f);
-
+  // We need to be able to see objects that are 1 cm (0.01 m) in front of us.
   m_near_clip = (float)(m_unit_scale * 0.01);
   m_far_clip = (float)(m_near_clip / vp.PerspectiveMinNearOverFar());
 
@@ -154,6 +151,7 @@ bool RhinoVrRenderer::Initialize()
   m_right_frus_top    *= m_near_clip;
   m_right_frus_bottom *= m_near_clip;
 
+  // We have asymmetric frustums
   vp.SetFrustumLeftRightSymmetry(false);
   vp.SetFrustumTopBottomSymmetry(false);
   vp.SetFrustum(
@@ -163,24 +161,27 @@ bool RhinoVrRenderer::Initialize()
 
   m_vp_orig_hmd_frus = vp;
 
-  int vp_width  = vp.ScreenPortWidth();
-  int vp_height = vp.ScreenPortHeight();
+  {
+    // We imitate the VR view in the Rhino viewport.
+    int vp_width = vp.ScreenPortWidth();
+    int vp_height = vp.ScreenPortHeight();
 
-  double frus_aspect;
-  vp.GetFrustumAspect(frus_aspect);
+    double frus_aspect;
+    vp.GetFrustumAspect(frus_aspect);
 
-  int vp_new_width = vp_width / 2;
-  int vp_new_height = (int)floor(vp_new_width / frus_aspect + 0.5);
+    int vp_new_width = vp_width / 2;
+    int vp_new_height = (int)floor(vp_new_width / frus_aspect + 0.5);
 
-  ON_wString script;
-  script.Format(L"-_ViewportProperties _Size %d %d _Enter", vp_new_width, vp_new_height);
+    ON_wString script;
+    script.Format(L"-_ViewportProperties _Size %d %d _Enter", vp_new_width, vp_new_height);
 
-  RhinoApp().RunScriptEx(m_doc_sn, script, nullptr, 0);
+    RhinoApp().RunScriptEx(m_doc_sn, script, nullptr, 0);
 
-  vp.SetScreenPort(0, vp_width, 0, vp_height);
+    vp.SetScreenPort(0, vp_width, 0, vp_height);
 
-  view->ActiveViewport().SetVP(vp, TRUE);
-  view->Redraw();
+    view->ActiveViewport().SetVP(vp, TRUE);
+    view->Redraw();
+  }
 
   // ATTENTION: The following lines are a (hopefully temporary) hack.
   // Rhino uses MFC, and MFC has a main message loop which calls
@@ -308,6 +309,7 @@ void RhinoVrRenderer::SetupRenderModelForDevice(vr::TrackedDeviceIndex_t device_
     RhinoVrDeviceData& device_data = m_device_data[device_index];
     device_data.m_render_model = render_model;
 
+    // We don't want to show the base stations.
     if (!render_model_name.EqualOrdinal("lh_basestation_vive", false))
     {
       device_data.m_show = true;
@@ -354,7 +356,7 @@ void RhinoVrRenderer::SetupRenderModels()
   if (!m_hmd)
     return;
 
-  for (auto device_idx = vr::k_unTrackedDeviceIndex_Hmd + 1; device_idx < vr::k_unMaxTrackedDeviceCount; device_idx++)
+  for (uint32_t device_idx = vr::k_unTrackedDeviceIndex_Hmd + 1; device_idx < vr::k_unMaxTrackedDeviceCount; device_idx++)
   {
     if (!m_hmd->IsTrackedDeviceConnected(device_idx))
       continue;
@@ -476,6 +478,8 @@ bool RhinoVrRenderer::UpdateState()
   {
     if (!m_doc->InCommand())
     {
+      // If both X and Y values are under 0.6 then we don't move/rotate.
+      // In other words, the touchpad needs to be touched close to the edge.
       const double threshold = 0.6;
 
       double x = touchpad_point.x;
@@ -529,7 +533,7 @@ bool RhinoVrRenderer::UpdateState()
   {
     m_hmd_xform = m_device_data[hmd_device_index].m_xform;
 
-    m_cam_to_left_eye_xform = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Left));
+    m_cam_to_left_eye_xform  = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Left));
     m_cam_to_right_eye_xform = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Right));
   }
 
@@ -609,6 +613,7 @@ bool RhinoVrRenderer::Draw()
   if (!draw_success)
     return false;
 
+  // The pipeline needs to be opened for compositor to work.
   m_vr_dp->OpenPipeline();
 
   vr::EVRCompositorError ovr_error = vr::VRCompositorError_None;
@@ -703,7 +708,7 @@ void RhinoVrRenderer::GetRhinoVrControllerState(
   RhinoVrDeviceController& controller)
 {
   {
-    static auto touchpad_btn_mask = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_SteamVR_Touchpad);
+    static uint64_t touchpad_btn_mask = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_SteamVR_Touchpad);
 
     bool was_down   = controller.m_touchpad_button_down;
     bool is_down    = (state.ulButtonPressed & touchpad_btn_mask);
@@ -717,7 +722,7 @@ void RhinoVrRenderer::GetRhinoVrControllerState(
   }
 
   {
-    static auto appmenu_btn_mask = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_ApplicationMenu);
+    static uint64_t appmenu_btn_mask = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_ApplicationMenu);
 
     bool was_down = controller.m_appmenu_button_down;
     bool is_down  = (state.ulButtonPressed & appmenu_btn_mask);
@@ -728,7 +733,7 @@ void RhinoVrRenderer::GetRhinoVrControllerState(
   }
 
   {
-    static auto grip_btn_mask = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_Grip);
+    static uint64_t grip_btn_mask = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_Grip);
 
     bool was_down = controller.m_grip_button_down;
     bool is_down  = (state.ulButtonPressed & grip_btn_mask);
@@ -884,7 +889,7 @@ bool RhinoVrRenderer::RhinoVrGetIntersectingObject(const ON_Xform& picking_devic
 
 bool RhinoVrRenderer::HandleInput()
 {
-  if (m_doc == nullptr || m_view == nullptr)
+  if (m_hmd == nullptr || m_doc == nullptr || m_view == nullptr)
     return false;
 
   vr::VREvent_t event;
@@ -1087,7 +1092,7 @@ bool RhinoVrDeviceModel::Initialize(
   texture_dib.ProcessPixels_SingleThreaded(
     [](CRhinoDib::Pixel& pixel, void* pvData)
     {
-      auto texdata = (const vr::RenderModel_TextureMap_t*)pvData;
+      const vr::RenderModel_TextureMap_t* texdata = (const vr::RenderModel_TextureMap_t*)pvData;
       size_t offset = (size_t)(4*(pixel.y*texdata->unWidth + pixel.x));
       const uint8_t* data_offset = texdata->rubTextureMapData + offset;
       
@@ -1101,9 +1106,9 @@ bool RhinoVrDeviceModel::Initialize(
     (void*)&diffuse_texture );
 
   
-  auto* rdk_texture = ::RhRdkNewDibTexture(&texture_dib, &doc);
+  CRhRdkTexture* rdk_texture = ::RhRdkNewDibTexture(&texture_dib, &doc);
 
-  auto* rdk_material = new CRhRdkBasicMaterial();
+  CRhRdkBasicMaterial* rdk_material = new CRhRdkBasicMaterial();
   rdk_material->Initialize();
 
   ON_wString child_slot_name = rdk_material->TextureChildSlotName(CRhRdkMaterial::ChildSlotUsage::Diffuse);
