@@ -223,7 +223,7 @@ RhinoVrDeviceModel* RhinoVrRenderer::FindOrLoadRenderModel(const char* render_mo
   {
     RhinoVrDeviceModel* dm = m_device_render_models[i].get();
 
-    if (dm->GetName().EqualOrdinal(render_model_name, false))
+    if (dm->m_device_name.EqualOrdinal(render_model_name, false))
     {
       render_model = dm;
       break;
@@ -273,7 +273,7 @@ RhinoVrDeviceModel* RhinoVrRenderer::FindOrLoadRenderModel(const char* render_mo
     render_model_unique.reset(new RhinoVrDeviceModel(render_model_name));
 
     render_model = render_model_unique.get();
-    if (!render_model->Init(*model, *texture, m_unit_scale, *m_doc))
+    if (!render_model->Initialize(*model, *texture, m_unit_scale, *m_doc))
     {
       m_device_render_models.Remove();
       RhinoApp().Print("Unable to create Rhino Mesh model from render model %s\n", render_model_name);
@@ -362,8 +362,8 @@ void RhinoVrRenderer::SetupRenderModels()
     SetupRenderModelForDevice(device_idx);
   }
 
-  m_hidden_area_mesh_left = LoadHiddenAreaMesh(vr::Eye_Left);
-  m_hidden_area_mesh_right = LoadHiddenAreaMesh(vr::Eye_Right);
+  m_hidden_mesh_left = LoadHiddenAreaMesh(vr::Eye_Left);
+  m_hidden_mesh_right = LoadHiddenAreaMesh(vr::Eye_Right);
 }
 
 void RhinoVrRenderer::UpdateDeviceDisplayConduits(
@@ -416,14 +416,14 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
     }
   }
 
-  m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_area_mesh_left, vr::Eye_Left);
-  m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_area_mesh_right, vr::Eye_Right);
+  m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_mesh_left, vr::Eye_Left);
+  m_hidden_mesh_display_conduit.SetHiddenAreaMesh(&m_hidden_mesh_right, vr::Eye_Right);
 
   m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(clip_to_left_eye_xform, vr::Eye_Left);
   m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(clip_to_right_eye_xform, vr::Eye_Right);
 
-  m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_area_mesh_left_cache_handle, vr::Eye_Left);
-  m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_area_mesh_right_cache_handle, vr::Eye_Right);
+  m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_mesh_left_cache_handle, vr::Eye_Left);
+  m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(&m_hidden_mesh_right_cache_handle, vr::Eye_Right);
 
   if (!m_hidden_mesh_display_conduit.IsEnabled())
   {
@@ -444,7 +444,7 @@ bool RhinoVrRenderer::UpdatePosesAndWaitForVSync()
 
 bool RhinoVrRenderer::UpdateState()
 {
-  if (m_view == nullptr || m_doc == nullptr)
+  if (m_hmd == nullptr || m_view == nullptr || m_doc == nullptr)
   {
     return false;
   }
@@ -502,7 +502,36 @@ bool RhinoVrRenderer::UpdateState()
     }
   }
 
-  UpdateDeviceXforms();
+  const uint32_t hmd_device_index = vr::k_unTrackedDeviceIndex_Hmd;
+
+  vr::TrackedDevicePose_t& hmd_device_pose = m_device_poses[hmd_device_index];
+
+  if (!m_hmd_location_correction_acquired && hmd_device_pose.bPoseIsValid)
+  {
+    m_hmd_location_correction_acquired = true;
+
+    ON_Xform xform = OpenVrMatrixToXform(hmd_device_pose.mDeviceToAbsoluteTracking);
+    m_hmd_location_correction_xform = ON_Xform::TranslationTransformation(ON_3dVector(-xform[0][3], -xform[1][3], -xform[2][3]));
+  }
+
+  for (int device_idx = 0; device_idx < vr::k_unMaxTrackedDeviceCount; ++device_idx)
+  {
+    vr::TrackedDevicePose_t& device_pose = m_device_poses[device_idx];
+
+    if (device_pose.bPoseIsValid)
+    {
+      const vr::HmdMatrix34_t& ovr_device_matrix = device_pose.mDeviceToAbsoluteTracking;
+      m_device_data[device_idx].m_xform = m_hmd_location_correction_xform * OpenVrMatrixToXform(ovr_device_matrix);
+    }
+  }
+
+  if (hmd_device_pose.bPoseIsValid)
+  {
+    m_hmd_xform = m_device_data[hmd_device_index].m_xform;
+
+    m_cam_to_left_eye_xform = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Left));
+    m_cam_to_right_eye_xform = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Right));
+  }
 
   const ON_Viewport& rhino_vp = m_view->ActiveViewport().VP();
 
@@ -630,7 +659,7 @@ void RhinoVrRenderer::ProcessVrEvent(const vr::VREvent_t & event)
 }
 
 bool RhinoVrRenderer::GetWorldPickLineAndClipRegion(
-  const ON_Xform& device_xform,
+  const ON_Xform& picking_device_xform,
   ON_Line& world_line,
   ON_ClippingRegion& clip_region,
   ON_Viewport& line_vp,
@@ -641,7 +670,7 @@ bool RhinoVrRenderer::GetWorldPickLineAndClipRegion(
   line_vp.SetCameraLocation(ON_3dPoint::Origin);
   line_vp.SetCameraDirection(-ON_3dVector::ZAxis);
   line_vp.SetCameraUp(ON_3dVector::YAxis);
-  line_vp.Transform(m_cam_to_world_xform*device_xform);
+  line_vp.Transform(m_cam_to_world_xform*picking_device_xform);
 
   int l, r, b, t;
   line_vp.GetScreenPort(&l, &r, &b, &t);
@@ -655,8 +684,8 @@ bool RhinoVrRenderer::GetWorldPickLineAndClipRegion(
 
   line_vp.SetScreenPort(l, r, b, t);
 
-  double near_dist = line_vp.FrustumNear();
-  line_vp.SetFrustumNearFar(near_dist, near_dist + m_pointer_line.Length());
+  double frus_near = m_unit_scale * 0.01;
+  line_vp.SetFrustumNearFar(frus_near, frus_near / line_vp.PerspectiveMinNearOverFar());
 
   line_pixel = ON_2iPoint(line_vp.ScreenPortWidth() / 2 + 1, line_vp.ScreenPortHeight() / 2 + 1);
 
@@ -1009,51 +1038,12 @@ ON_Xform RhinoVrRenderer::OpenVrMatrixToXform(const vr::HmdMatrix34_t &mat)
   return xform;
 }
 
-bool RhinoVrRenderer::UpdateDeviceXforms()
-{
-  if (m_hmd == nullptr)
-    return false;
-
-  const uint32_t hmd_device_index = vr::k_unTrackedDeviceIndex_Hmd;
-
-  vr::TrackedDevicePose_t& hmd_device_pose = m_device_poses[hmd_device_index];
-
-  if (!m_hmd_location_correction_acquired && hmd_device_pose.bPoseIsValid)
-  {
-    m_hmd_location_correction_acquired = true;
-
-    ON_Xform xform = OpenVrMatrixToXform(hmd_device_pose.mDeviceToAbsoluteTracking);
-    m_hmd_location_correction_xform = ON_Xform::TranslationTransformation(ON_3dVector(-xform[0][3], -xform[1][3], -xform[2][3]));
-  }
-
-  for (int device_idx = 0; device_idx < vr::k_unMaxTrackedDeviceCount; ++device_idx)
-  {
-    vr::TrackedDevicePose_t& device_pose = m_device_poses[device_idx];
-
-    if (device_pose.bPoseIsValid)
-    {
-      const vr::HmdMatrix34_t& ovr_device_matrix = device_pose.mDeviceToAbsoluteTracking;
-      m_device_data[device_idx].m_xform = m_hmd_location_correction_xform * OpenVrMatrixToXform(ovr_device_matrix);
-    }
-  }
-
-  if (hmd_device_pose.bPoseIsValid)
-  {
-    m_hmd_xform = m_device_data[hmd_device_index].m_xform;
-
-    m_cam_to_left_eye_xform = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Left));
-    m_cam_to_right_eye_xform = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Right));
-  }
-
-  return true;
-}
-
 RhinoVrDeviceModel::RhinoVrDeviceModel(const ON_String& sRenderModelName)
   : m_device_name(sRenderModelName)
 {
 }
 
-bool RhinoVrDeviceModel::Init(
+bool RhinoVrDeviceModel::Initialize(
   const vr::RenderModel_t& model,
   const vr::RenderModel_TextureMap_t& diffuse_texture,
   double unit_scale,
@@ -1128,9 +1118,4 @@ bool RhinoVrDeviceModel::Init(
   delete rdk_material;
 
   return true;
-}
-
-const ON_String& RhinoVrDeviceModel::GetName() const
-{
-  return m_device_name;
 }

@@ -5,16 +5,17 @@
 #include "RhinoVrHiddenAreaMeshDisplayConduit.h"
 #include <vector>
 
+// This class represents a VR device. It can be used
+// to render the device in Rhino.
 class RhinoVrDeviceModel
 {
 public:
   RhinoVrDeviceModel(const ON_String& sRenderModelName);
-  bool Init(
+  bool Initialize(
     const vr::RenderModel_t& vrModel,
     const vr::RenderModel_TextureMap_t& vrDiffuseTexture,
     double unit_scale,
     const CRhinoDoc& doc);
-  const ON_String& GetName() const;
 
   ON_String m_device_name;
   ON_Mesh m_device_mesh;
@@ -22,6 +23,8 @@ public:
   CRhinoCacheHandle m_cache_handle;
 };
 
+// This struct represents the current state of
+// a VR controller.
 struct RhinoVrDeviceController
 {
   bool m_touchpad_button_down = false;
@@ -45,6 +48,9 @@ struct RhinoVrDeviceController
   ON_2dPoint m_touchpad_touch_point = ON_2dPoint::Origin;
 };
 
+// This struct contains up-to-date information of a tracked
+// VR device, such as location/orientation, geometry, and
+// the state of any buttons/triggers/touchpads.
 struct RhinoVrDeviceData
 {
   bool m_show = false;
@@ -54,6 +60,8 @@ struct RhinoVrDeviceData
   RhinoVrDeviceController m_controller;
 };
 
+// RhinoVrRenderer is the main class of RhinoVR. It handles VR library
+// initialization, input handling and frame drawing.
 class RhinoVrRenderer
 {
 public:
@@ -64,15 +72,25 @@ public:
   void ProcessInputAndRenderFrame();
 
 protected:
+  // Converts an OpenVR matrix to an ON_Xform.
   ON_Xform OpenVrMatrixToXform(const vr::HmdMatrix34_t& matPose);
 
-  bool UpdateDeviceXforms();
-
+  // Loads all needed render models from the VR library.
   void SetupRenderModels();
+
+  // Loads a render model for a specific device.
   void SetupRenderModelForDevice(vr::TrackedDeviceIndex_t unTrackedDeviceIndex);
+
+  // Loads the "hidden area mesh" geometry which is intended to block
+  // out the parts of the screens which won't be visible to the eyes.
+  // This is done to improve rendering  performance.
   ON_Mesh LoadHiddenAreaMesh(vr::Hmd_Eye eye);
+
+  // Returns a render model by name. If it hasn't been loaded yet, it will
+  // first be loaded from the VR library.
   RhinoVrDeviceModel* FindOrLoadRenderModel(const char* pchRenderModelName);
 
+  // Provide device display conduits with updated device information.
   void UpdateDeviceDisplayConduits(
     const ON_Xform& camera_to_world_xform,
     const ON_Xform& clip_to_left_eye_xform,
@@ -81,61 +99,106 @@ protected:
   bool AttachDocAndView();
   void DetachDocAndView();
   
+  // Updates the transforms of all tracked devices.
+  // This function will wait for the HMD's vertical sync signal.
   bool UpdatePosesAndWaitForVSync();
+
+  // Updates the device and controller states. Calculates view orientation.
+  // Sets view frustum and near/far planes.
   bool UpdateState();
+
+  // Performs actions based on controller inputs.
   bool HandleInput();
+
+  // Draws the left and right eye views and sends the result to the HMD.
   bool Draw();
 
+  // Fills in the high-level controller state from the data provided by the VR library.
   void GetRhinoVrControllerState(const vr::VRControllerState_t& state, RhinoVrDeviceController& controller);
+  
+  // Processes VR events.
   void ProcessVrEvent(const vr::VREvent_t & event);
 
+  // Simulate Rhino's GetPoint in VR.
   void RhinoVrGetPoint(const ON_Xform& picking_device_xform);
+
+  // Simulate Rhino's OnMouseMove in VR.
   void RhinoVrOnMouseMove(const ON_Xform& picking_device_xform);
+
+  // Find object intersection with an eye-space ray transformed by 'picking_device_xform'.
+  // The eye-space ray is (0.0, 0.0, -frustum_near) to (0.0, 0.0, -frustum_far).
   bool RhinoVrGetIntersectingObject(
     const ON_Xform& picking_device_xform, const CRhinoObject*& isect_object, ON_3dPoint& isect_point);
 
   bool GetWorldPickLineAndClipRegion(
-    const ON_Xform& device_xform, ON_Line& world_line,
+    const ON_Xform& picking_device_xform, ON_Line& world_line,
     ON_ClippingRegion& clip_region, ON_Viewport& line_vp, ON_2iPoint& line_pixel);
 
 protected:
+  // The serial number of the Rhino document
+  // used when executing RhinoVR.
   unsigned int m_doc_sn;
+
+  // The serial number of the Rhino view
+  // which was active when executing RhinoVR.
   unsigned int m_view_sn;
 
-  CRhinoDoc* m_doc;
-  CRhinoView* m_view;
+  CRhinoDoc*  m_doc;  // The Rhino document acquired from 'm_doc_sn'.
+  CRhinoView* m_view; // The Rhino view acquired from 'm_view_sn'.
 
+  // Viewport representing the location, orientation and field of view of the HMD.
   std::unique_ptr<CRhinoViewport> m_vr_vp;
+
+  // The display pipeline used for rendering in VR.
   std::unique_ptr<CRhinoDisplayPipeline> m_vr_dp;
+
+  // The VR display pipeline down-cast to the OpenGL pipeline.
   CRhinoDisplayPipeline_OGL* m_vr_dp_ogl;
 
-  int m_window_width;
-  int m_window_height;
+  float m_near_clip; // VR frustum near.
+  float m_far_clip;  // VR frustum far.
 
-  float m_near_clip;
-  float m_far_clip;
-
+  // Left eye frustum.
   float m_left_frus_left, m_left_frus_right, m_left_frus_top, m_left_frus_bottom;
+
+  // Right eye frustum.
   float m_right_frus_left, m_right_frus_right, m_right_frus_top, m_right_frus_bottom;
 
+  // Scaling applied to all geometry fetched from the VR library.
+  // The unit of VR library geometry is meters.
+  // If the Rhino document units is millimeters, we need to scale all
+  // VR library geometry by 1000.0, i.e. we need to express their
+  // real-world size in millimeters.
   double m_unit_scale;
 
-  ON_Xform m_cam_to_left_eye_xform;
-  ON_Xform m_cam_to_right_eye_xform;
+  ON_Xform m_cam_to_left_eye_xform;  // Left eye transform.
+  ON_Xform m_cam_to_right_eye_xform; // Right eye transform.
 
-  ON_Xform m_hmd_xform;
+  ON_Xform m_hmd_xform; // HMD transform.
+
+  // HMD location correction.
+  // This transform is set once, and will always 
+  // be applied to the HMD transform. It makes sure
+  // that the initial location of the HMD will always
+  // be where the Rhino viewport camera was originally.
   ON_Xform m_hmd_location_correction_xform;
 
+  // Indicates whether we have set the HMD location correction xform.
   bool m_hmd_location_correction_acquired;
 
-  ON_Xform m_cam_to_world_xform;
-  ON_Xform m_world_to_cam_xform;
+  ON_Xform m_cam_to_world_xform; // Transform from camera-space to world-space.
+  ON_Xform m_world_to_cam_xform; // Transform from world-space to camera-space.
 
-  ON_Xform m_clip_to_left_eye_xform;
-  ON_Xform m_clip_to_right_eye_xform;
+  ON_Xform m_clip_to_left_eye_xform;  // Transform from clip-space to left eye-space.
+  ON_Xform m_clip_to_right_eye_xform; // Transform from clip-space to right eye-space.
 
+  // Camera translation vector due to moving around using the controller.
   ON_3dVector m_camera_translation;
+
+  // Camera rotation in radians due to rotating using the controller.
   double m_camera_rotation;
+
+  // Previous frame's camera direction.
   ON_3dVector m_previous_camera_direction;
 
   // The original viewport from the Rhino view.
@@ -164,21 +227,26 @@ protected:
   // shooting out from the controllers.
   ON_Line m_pointer_line;
 
+  // The transforms of all tracked devices.
   vr::TrackedDevicePose_t m_device_poses[vr::k_unMaxTrackedDeviceCount];
 
+  // The device data of all tracked devices.
   ON_ClassArray<RhinoVrDeviceData> m_device_data;
+
+  // The render models of all tracked devices.
   ON_ClassArray<std::unique_ptr<RhinoVrDeviceModel>> m_device_render_models;
 
-  ON_Mesh m_hidden_area_mesh_left;
-  ON_Mesh m_hidden_area_mesh_right;
-  CRhinoCacheHandle m_hidden_area_mesh_left_cache_handle;
-  CRhinoCacheHandle m_hidden_area_mesh_right_cache_handle;
+  ON_Mesh m_hidden_mesh_left;  // The hidden area mesh for the left eye.
+  ON_Mesh m_hidden_mesh_right; // The hidden area mesh for the right eye.
 
+  CRhinoCacheHandle m_hidden_mesh_left_cache_handle;  // The left hidden area mesh cache handle.
+  CRhinoCacheHandle m_hidden_mesh_right_cache_handle; // The right hidden area mesh cache handle.
+
+  // The hidden area mesh display conduit.
   RhinoVrHiddenAreaMeshDisplayConduit m_hidden_mesh_display_conduit;
 
 private:
-  vr::IVRSystem* m_hmd;
-  vr::IVRRenderModels* m_render_models;
-  vr::IVRCompositor* m_compositor;
+  vr::IVRSystem*       m_hmd;           // System interface owned by the VR library.
+  vr::IVRRenderModels* m_render_models; // Render models interface owned by the VR library.
+  vr::IVRCompositor*   m_compositor;    // Compositor interface owned by the VR library.
 };
-

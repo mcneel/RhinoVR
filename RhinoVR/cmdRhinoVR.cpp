@@ -9,6 +9,8 @@ struct RhinoVrStruct
   class RhinoVrMainLoopEventHook* m_loop_hook = nullptr;
 } g_rhino_vr;
 
+// This class' Notify method gets called repeatedly inside
+// the Rhino main loop. We render a RhinoVR frame for every call.
 class RhinoVrMainLoopEventHook : public CRhinoOnMainLoopEvent
 {
 public:
@@ -78,7 +80,7 @@ CRhinoCommand::result CCommandRhinoVR::RunCommand(const CRhinoCommandContext& co
 
   g_rhino_vr.m_running = true;
 
-  // Event watcher
+  // Event watcher for OnCloseDocument
   Register();
   Enable(TRUE);
 
@@ -103,7 +105,7 @@ void CCommandRhinoVR::RhinoVrTearDown()
   delete g_rhino_vr.m_renderer;
   g_rhino_vr.m_renderer = nullptr;
 
-  // Event watcher
+  // Event watcher for OnCloseDocument
   Enable(FALSE);
   UnRegister();
 }
