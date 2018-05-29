@@ -5,6 +5,8 @@
 #include "RhinoVrHiddenAreaMeshDisplayConduit.h"
 #include <vector>
 
+//#define TIMING_OUTPUT
+
 // This class represents a VR device. It can be used
 // to render the device in Rhino.
 class RhinoVrDeviceModel
@@ -133,6 +135,21 @@ protected:
   bool GetWorldPickLineAndClipRegion(
     const ON_Xform& picking_device_xform, ON_Line& world_line,
     ON_ClippingRegion& clip_region, ON_Viewport& line_vp, ON_2iPoint& line_pixel);
+
+protected: // Timing related functions
+  void FrameTimingStart();
+  void FrameTimingStop();
+  void RhinoTimingStart();
+  void RhinoTimingStop();
+  void VsyncTimingStart();
+  void VsyncTimingStop();
+
+  RhTimestamp TimingStart();
+  void TimingStop(const RhTimestamp& start_time, const ON_wString& message);
+
+  RhTimestamp m_frame_time_start;
+  RhTimestamp m_rhino_time_start;
+  RhTimestamp m_vsync_time_start;
 
 protected:
   // The serial number of the Rhino document

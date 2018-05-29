@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "RhinoVrRenderer.h"
+#include <gl/GL.h>
 
 #pragma comment(lib, "../OpenVR/lib/win64/openvr_api.lib")
 
@@ -28,6 +29,9 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   , m_camera_rotation(0.0)
   , m_hmd_location_correction_acquired(false)
   , m_unit_scale(1.0)
+  , m_frame_time_start(0)
+  , m_rhino_time_start(0)
+  , m_vsync_time_start(0)
 {
   memset(m_device_poses, 0, sizeof(m_device_poses));
   
@@ -67,8 +71,8 @@ bool RhinoVrRenderer::Initialize()
 
   if (m_hmd == nullptr || ovr_error != vr::VRInitError_None)
   {
-    ON_wString str;
-    str.Format(L"Unable to initialize VR runtime: %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
+    ON_String str;
+    str.Format("Unable to initialize VR runtime: %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
     RhinoApp().Print(str);
     return false;
   }
@@ -76,8 +80,8 @@ bool RhinoVrRenderer::Initialize()
   m_render_models = (vr::IVRRenderModels*) vr::VR_GetGenericInterface(vr::IVRRenderModels_Version, &ovr_error);
   if (m_render_models == nullptr || ovr_error != vr::VRInitError_None)
   {
-    ON_wString str;
-    str.Format(L"Unable to get render models interface: %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
+    ON_String str;
+    str.Format("Unable to get render models interface: %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
     RhinoApp().Print(str);
     return false;
   }
@@ -85,8 +89,8 @@ bool RhinoVrRenderer::Initialize()
   m_compositor = (vr::IVRCompositor*) vr::VR_GetGenericInterface(vr::IVRCompositor_Version, &ovr_error);
   if (m_compositor == nullptr || ovr_error != vr::VRInitError_None)
   {
-    ON_wString str;
-    str.Format(L"Unable to initialize VR compositor : %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
+    ON_String str;
+    str.Format("Unable to initialize VR compositor : %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
     RhinoApp().Print(str);
   }
 
@@ -636,6 +640,9 @@ bool RhinoVrRenderer::Draw()
     return false;
   }
 
+  ::glFlush();
+  ::glFinish();
+
   m_vr_dp->ClosePipeline();
 
   return true;
@@ -976,10 +983,17 @@ bool RhinoVrRenderer::HandleInput()
 
 void RhinoVrRenderer::ProcessInputAndRenderFrame()
 {
+  RhinoTimingStop();
+
   if (AttachDocAndView())
   {
+    VsyncTimingStart();
+
     if (!UpdatePosesAndWaitForVSync())
       return;
+
+    VsyncTimingStop();
+    FrameTimingStart();
 
     if (!UpdateState())
       return;
@@ -990,8 +1004,12 @@ void RhinoVrRenderer::ProcessInputAndRenderFrame()
     if (!Draw())
       return;
 
+    FrameTimingStop();
+
     DetachDocAndView();
   }
+
+  RhinoTimingStart();
 }
 
 bool RhinoVrRenderer::AttachDocAndView()
@@ -1123,4 +1141,58 @@ bool RhinoVrDeviceModel::Initialize(
   delete rdk_material;
 
   return true;
+}
+
+void RhinoVrRenderer::FrameTimingStart()
+{
+  m_frame_time_start = TimingStart();
+}
+
+void RhinoVrRenderer::FrameTimingStop()
+{
+  TimingStop(m_frame_time_start, L"Frame time");
+}
+
+void RhinoVrRenderer::RhinoTimingStart()
+{
+  m_rhino_time_start = TimingStart();
+}
+
+void RhinoVrRenderer::RhinoTimingStop()
+{
+  TimingStop(m_rhino_time_start, L"Rhino time");
+}
+
+void RhinoVrRenderer::VsyncTimingStart()
+{
+  m_vsync_time_start = TimingStart();
+}
+
+void RhinoVrRenderer::VsyncTimingStop()
+{
+  TimingStop(m_vsync_time_start, L"Vsync time");
+}
+
+RhTimestamp RhinoVrRenderer::TimingStart()
+{
+#ifdef TIMING_OUTPUT
+  return RhinoGetTimestamp();
+#else
+  return (RhTimestamp)0;
+#endif
+}
+
+void RhinoVrRenderer::TimingStop(const RhTimestamp& start_time, const ON_wString& message)
+{
+#ifdef TIMING_OUTPUT
+  if (start_time == 0)
+    return;
+
+  double time_millis = 1000.0*RhinoGetTimeInSecondsSince(start_time);
+  
+  ON_wString str;
+  str.Format(L"%s: %f ms\n", message.Array(), time_millis);
+
+  OutputDebugString(str);
+#endif
 }
