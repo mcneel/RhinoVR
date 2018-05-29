@@ -67,8 +67,8 @@ bool RhinoVrRenderer::Initialize()
 
   if (m_hmd == nullptr || ovr_error != vr::VRInitError_None)
   {
-    ON_wString str;
-    str.Format(L"Unable to initialize VR runtime: %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
+    ON_String str;
+    str.Format("Unable to initialize VR runtime: %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
     RhinoApp().Print(str);
     return false;
   }
@@ -76,8 +76,8 @@ bool RhinoVrRenderer::Initialize()
   m_render_models = (vr::IVRRenderModels*) vr::VR_GetGenericInterface(vr::IVRRenderModels_Version, &ovr_error);
   if (m_render_models == nullptr || ovr_error != vr::VRInitError_None)
   {
-    ON_wString str;
-    str.Format(L"Unable to get render models interface: %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
+    ON_String str;
+    str.Format("Unable to get render models interface: %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
     RhinoApp().Print(str);
     return false;
   }
@@ -85,8 +85,8 @@ bool RhinoVrRenderer::Initialize()
   m_compositor = (vr::IVRCompositor*) vr::VR_GetGenericInterface(vr::IVRCompositor_Version, &ovr_error);
   if (m_compositor == nullptr || ovr_error != vr::VRInitError_None)
   {
-    ON_wString str;
-    str.Format(L"Unable to initialize VR compositor : %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
+    ON_String str;
+    str.Format("Unable to initialize VR compositor : %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
     RhinoApp().Print(str);
   }
 
