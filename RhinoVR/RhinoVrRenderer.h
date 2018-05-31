@@ -5,8 +5,6 @@
 #include "RhinoVrHiddenAreaMeshDisplayConduit.h"
 #include <vector>
 
-//#define TIMING_OUTPUT
-
 // This class represents a VR device. It can be used
 // to render the device in Rhino.
 class RhinoVrDeviceModel
@@ -188,8 +186,8 @@ protected:
   // real-world size in millimeters.
   double m_unit_scale;
 
-  ON_Xform m_cam_to_left_eye_xform;  // Left eye transform.
-  ON_Xform m_cam_to_right_eye_xform; // Right eye transform.
+  ON_Xform m_left_eye_xform;  // Left eye transform.
+  ON_Xform m_right_eye_xform; // Right eye transform.
 
   ON_Xform m_hmd_xform; // HMD transform.
 
@@ -203,20 +201,8 @@ protected:
   // Indicates whether we have set the HMD location correction xform.
   bool m_hmd_location_correction_acquired;
 
-  ON_Xform m_cam_to_world_xform; // Transform from camera-space to world-space.
-  ON_Xform m_world_to_cam_xform; // Transform from world-space to camera-space.
-
-  ON_Xform m_clip_to_left_eye_xform;  // Transform from clip-space to left eye-space.
-  ON_Xform m_clip_to_right_eye_xform; // Transform from clip-space to right eye-space.
-
-  // Camera translation vector due to moving around using the controller.
-  ON_3dVector m_camera_translation;
-
-  // Camera rotation in radians due to rotating using the controller.
-  double m_camera_rotation;
-
-  // Previous frame's camera direction.
-  ON_3dVector m_previous_camera_direction;
+  // Transform from camera-space to world-space, including movement by controller.
+  ON_Xform m_cam_to_world_xform;
 
   // The original viewport from the Rhino view.
   ON_Viewport m_vp_orig;

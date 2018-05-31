@@ -2,6 +2,8 @@
 #include "RhinoVrRenderer.h"
 #include <gl/GL.h>
 
+//#define RHINOVR_TIMING_ENABLED
+
 #pragma comment(lib, "../OpenVR/lib/win64/openvr_api.lib")
 
 RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
@@ -17,16 +19,12 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   , m_compositor(nullptr)
   , m_near_clip(1.0f)
   , m_far_clip(100.0f)
-  , m_cam_to_left_eye_xform(ON_Xform::IdentityTransformation)
-  , m_cam_to_right_eye_xform(ON_Xform::IdentityTransformation)
+  , m_left_eye_xform(ON_Xform::IdentityTransformation)
+  , m_right_eye_xform(ON_Xform::IdentityTransformation)
   , m_hmd_xform(ON_Xform::IdentityTransformation)
   , m_hmd_location_correction_xform(ON_Xform::IdentityTransformation)
-  , m_clip_to_left_eye_xform(ON_Xform::IdentityTransformation)
-  , m_clip_to_right_eye_xform(ON_Xform::IdentityTransformation)
-  , m_camera_translation(ON_3dVector::ZeroVector)
+  , m_cam_to_world_xform(ON_Xform::Unset)
   , m_pointer_line(ON_Line::UnsetLine)
-  , m_previous_camera_direction(ON_3dVector::UnsetVector)
-  , m_camera_rotation(0.0)
   , m_hmd_location_correction_acquired(false)
   , m_unit_scale(1.0)
   , m_frame_time_start(0)
@@ -41,6 +39,8 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
 
 RhinoVrRenderer::~RhinoVrRenderer()
 {
+  RhinoApp().Print(L"Closing down RhinoVR...\n");
+
   CWnd* main_window = CWnd::FromHandle(RhinoApp().MainWnd());
   if (main_window)
     main_window->KillTimer(2029);
@@ -65,6 +65,8 @@ RhinoVrRenderer::~RhinoVrRenderer()
 
 bool RhinoVrRenderer::Initialize()
 {
+  RhinoApp().Print(L"Initializing RhinoVR...\n");
+
   vr::EVRInitError ovr_error = vr::VRInitError_None;
 
   m_hmd = vr::VR_Init(&ovr_error, vr::VRApplication_Scene);
@@ -199,6 +201,8 @@ bool RhinoVrRenderer::Initialize()
   if(main_window)
     main_window->SetTimer(2029, 0, NULL);
 
+  RhinoApp().Print(L"RhinoVR has been initialized. Go ahead and put on the VR headset.\n");
+
   return true;
 }
 
@@ -312,11 +316,13 @@ void RhinoVrRenderer::SetupRenderModelForDevice(vr::TrackedDeviceIndex_t device_
   {
     RhinoVrDeviceData& device_data = m_device_data[device_index];
     device_data.m_render_model = render_model;
+    device_data.m_show = true;
 
-    // We don't want to show the base stations.
-    if (!render_model_name.EqualOrdinal("lh_basestation_vive", false))
+    // We don't want to show the Vive base stations or the Rift cameras.
+    if (render_model_name.EqualOrdinal("lh_basestation_vive", false) ||
+        render_model_name.EqualOrdinal("rift_camera", false))
     {
-      device_data.m_show = true;
+      device_data.m_show = false;
     }
   }
 }
@@ -455,7 +461,7 @@ bool RhinoVrRenderer::UpdateState()
     return false;
   }
 
-  ON_2dPoint touchpad_point = ON_2dPoint::UnsetPoint;
+  ON_2dPoint touchpad_point = ON_2dPoint::Origin;
 
   for (vr::TrackedDeviceIndex_t device_idx = 0; device_idx < vr::k_unMaxTrackedDeviceCount; device_idx++)
   {
@@ -468,21 +474,27 @@ bool RhinoVrRenderer::UpdateState()
       RhinoVrDeviceController& controller = m_device_data[device_idx].m_controller;
       GetRhinoVrControllerState(state, controller);
 
-      if (controller.m_touchpad_button_touched)
+      ON_2dPoint tpp = controller.m_touchpad_touch_point;
+
+      if (tpp != ON_2dPoint::Origin)
       {
-        if (touchpad_point.IsUnset())
-        {
-          touchpad_point = controller.m_touchpad_touch_point;
-        }
+        if (abs(tpp.x) > abs(touchpad_point.x))
+          touchpad_point.x = tpp.x;
+
+        if (abs(tpp.y) > abs(touchpad_point.y))
+          touchpad_point.y = tpp.y;
       }
     }
   }
 
-  if (!touchpad_point.IsUnset())
+  double camera_rotation = 0.0;
+  double camera_translation_distance = 0.0;
+
+  if (touchpad_point != ON_2dPoint::Origin)
   {
     if (!m_doc->InCommand())
     {
-      // If both X and Y values are under 0.6 then we don't move/rotate.
+      // If both X and Y magnitudes are under 0.6 then we don't move/rotate.
       // In other words, the touchpad needs to be touched close to the edge.
       const double threshold = 0.6;
 
@@ -492,7 +504,7 @@ bool RhinoVrRenderer::UpdateState()
       if (abs(x) >= threshold)
       {
         double x_scaled = x_sign * (abs(x) - threshold)*(1.0 / (1.0 - threshold));
-        m_camera_rotation = m_camera_rotation - 2.0*x_scaled*ON_DEGREES_TO_RADIANS;
+        camera_rotation = -2.0*x_scaled*ON_DEGREES_TO_RADIANS;
       }
 
       double y = touchpad_point.y;
@@ -502,10 +514,7 @@ bool RhinoVrRenderer::UpdateState()
       {
         double y_scaled = y_sign * (abs(y) - threshold)*(1.0 / (1.0 - threshold));
 
-        if (m_previous_camera_direction != ON_3dVector::UnsetVector)
-        {
-          m_camera_translation = m_camera_translation + 0.25*y_scaled*m_previous_camera_direction*m_unit_scale;
-        }
+        camera_translation_distance = 0.25*y_scaled*m_unit_scale;
       }
     }
   }
@@ -537,40 +546,56 @@ bool RhinoVrRenderer::UpdateState()
   {
     m_hmd_xform = m_device_data[hmd_device_index].m_xform;
 
-    m_cam_to_left_eye_xform  = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Left));
-    m_cam_to_right_eye_xform = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Right));
+    m_left_eye_xform  = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Left));
+    m_right_eye_xform = OpenVrMatrixToXform(m_hmd->GetEyeToHeadTransform(vr::Eye_Right));
   }
 
   const ON_Viewport& rhino_vp = m_view->ActiveViewport().VP();
 
   ON_Viewport vp = m_vp_orig_hmd_frus;
-
-  vp.SetProjection     (rhino_vp.Projection()     );
-  vp.SetCameraLocation (rhino_vp.CameraLocation() );
-  vp.SetCameraDirection(rhino_vp.CameraDirection());
-  vp.SetCameraUp       (rhino_vp.CameraUp()       );
-  vp.SetTargetPoint    (rhino_vp.TargetPoint()    );
-
+  vp.SetProjection     (rhino_vp.Projection());
+  vp.SetCameraLocation ( ON_3dPoint::Origin);
+  vp.SetCameraDirection(-ON_3dVector::ZAxis);
+  vp.SetCameraUp       ( ON_3dVector::YAxis);
+  vp.SetTargetPoint    (-ON_3dVector::ZAxis*rhino_vp.TargetDistance(true));
   vp.SetFrustumNearFar(m_near_clip, m_far_clip);
 
-  vp.DollyCamera(m_camera_translation);
-  vp.DollyFrustum(m_camera_translation.z);
-  vp.Rotate(m_camera_rotation, ON_3dVector::ZAxis, vp.CameraLocation());
-
-  vp.GetXform(ON::coordinate_system::camera_cs, ON::coordinate_system::world_cs, m_cam_to_world_xform);
-  vp.GetXform(ON::coordinate_system::world_cs, ON::coordinate_system::camera_cs, m_world_to_cam_xform);
+  if (m_cam_to_world_xform == ON_Xform::Unset)
+  {
+    // If not set, initialize to Rhino camera xform.
+    rhino_vp.GetXform(ON::coordinate_system::camera_cs, ON::coordinate_system::world_cs, m_cam_to_world_xform);
+  }
 
   m_vp_hmd = vp;
-  ON_Xform cam_to_hmd_xform = m_cam_to_world_xform * m_hmd_xform * m_world_to_cam_xform;
 
-  m_vp_hmd.Transform(cam_to_hmd_xform);
+  ON_Xform hmd_to_world_xform = m_cam_to_world_xform * m_hmd_xform;
 
-  m_previous_camera_direction = m_vp_hmd.CameraDirection().UnitVector();
+  // Transform the HMD to it's world position last frame.
+  m_vp_hmd.Transform(hmd_to_world_xform);
 
-  // By default, the view is set to the HMD viewport.
+  // Apply rotation due to controller.
+  ON_3dPoint hmd_loc = m_vp_hmd.CameraLocation();
+  m_vp_hmd.Rotate(camera_rotation, ON_3dVector::ZAxis, hmd_loc);
+
+  // Apply translation due to controller.
+  ON_3dVector hmd_dir   = m_vp_hmd.CameraDirection();
+  ON_3dVector hmd_dolly = camera_translation_distance * hmd_dir;
+  m_vp_hmd.DollyCamera(hmd_dolly);
+  m_vp_hmd.DollyFrustum(hmd_dolly.z);
+
+  // Now extract the final xform which includes movements from the controller.
+  ON_Xform hmd_to_world_final_xform;
+  m_vp_hmd.GetXform(ON::coordinate_system::camera_cs, ON::coordinate_system::world_cs, hmd_to_world_final_xform);
+
+  // We get the controller-only xform by "subtracting" away hmd_to_world.
+  ON_Xform controller_xform = hmd_to_world_final_xform * hmd_to_world_xform.Inverse();
+
+  // We update cam_to_world to incorporate the controller xform.
+  m_cam_to_world_xform = controller_xform * m_cam_to_world_xform;
+
   m_vr_vp->SetVP(m_vp_hmd, TRUE);
 
-  ON_Xform cam_to_left_eye_xform = m_cam_to_world_xform * m_hmd_xform * m_cam_to_left_eye_xform * m_world_to_cam_xform;
+  ON_Xform cam_to_left_eye_xform = hmd_to_world_final_xform * m_left_eye_xform;
 
   m_vp_left_eye = vp;
 
@@ -580,9 +605,10 @@ bool RhinoVrRenderer::UpdateState()
     m_left_frus_top, m_left_frus_bottom,
     m_near_clip, m_far_clip);
 
-  m_vp_left_eye.GetXform(ON::coordinate_system::clip_cs, ON::coordinate_system::world_cs, m_clip_to_left_eye_xform);
+  ON_Xform clip_to_left_eye_xform;
+  m_vp_left_eye.GetXform(ON::coordinate_system::clip_cs, ON::coordinate_system::world_cs, clip_to_left_eye_xform);
 
-  ON_Xform cam_to_right_eye_xform = m_cam_to_world_xform * m_hmd_xform * m_cam_to_right_eye_xform * m_world_to_cam_xform;
+  ON_Xform cam_to_right_eye_xform = hmd_to_world_final_xform * m_right_eye_xform;
 
   m_vp_right_eye = vp;
 
@@ -592,9 +618,10 @@ bool RhinoVrRenderer::UpdateState()
     m_right_frus_top, m_right_frus_bottom,
     m_near_clip, m_far_clip);
 
-  m_vp_right_eye.GetXform(ON::coordinate_system::clip_cs, ON::coordinate_system::world_cs, m_clip_to_right_eye_xform);
+  ON_Xform clip_to_right_eye_xform;
+  m_vp_right_eye.GetXform(ON::coordinate_system::clip_cs, ON::coordinate_system::world_cs, clip_to_right_eye_xform);
 
-  UpdateDeviceDisplayConduits(m_cam_to_world_xform, m_clip_to_left_eye_xform, m_clip_to_right_eye_xform);
+  UpdateDeviceDisplayConduits(m_cam_to_world_xform, clip_to_left_eye_xform, clip_to_right_eye_xform);
 
   return true;
 }
@@ -640,8 +667,10 @@ bool RhinoVrRenderer::Draw()
     return false;
   }
 
+#ifdef RHINOVR_TIMING_ENABLED
   ::glFlush();
   ::glFinish();
+#endif
 
   m_vr_dp->ClosePipeline();
 
@@ -1175,16 +1204,16 @@ void RhinoVrRenderer::VsyncTimingStop()
 
 RhTimestamp RhinoVrRenderer::TimingStart()
 {
-#ifdef TIMING_OUTPUT
+#ifdef RHINOVR_TIMING_ENABLED
   return RhinoGetTimestamp();
 #else
   return (RhTimestamp)0;
 #endif
 }
 
+#ifdef RHINOVR_TIMING_ENABLED
 void RhinoVrRenderer::TimingStop(const RhTimestamp& start_time, const ON_wString& message)
 {
-#ifdef TIMING_OUTPUT
   if (start_time == 0)
     return;
 
@@ -1194,5 +1223,9 @@ void RhinoVrRenderer::TimingStop(const RhTimestamp& start_time, const ON_wString
   str.Format(L"%s: %f ms\n", message.Array(), time_millis);
 
   OutputDebugString(str);
-#endif
 }
+#else
+void RhinoVrRenderer::TimingStop(const RhTimestamp& /*start_time*/, const ON_wString& /*message*/)
+{
+}
+#endif
