@@ -186,10 +186,9 @@ protected:
   // real-world size in millimeters.
   double m_unit_scale;
 
+  ON_Xform m_hmd_xform;       // HMD transform.
   ON_Xform m_left_eye_xform;  // Left eye transform.
   ON_Xform m_right_eye_xform; // Right eye transform.
-
-  ON_Xform m_hmd_xform; // HMD transform.
 
   // HMD location correction.
   // This transform is set once, and will always 

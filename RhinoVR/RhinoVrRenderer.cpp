@@ -39,8 +39,6 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
 
 RhinoVrRenderer::~RhinoVrRenderer()
 {
-  RhinoApp().Print(L"Closing down RhinoVR...\n");
-
   CWnd* main_window = CWnd::FromHandle(RhinoApp().MainWnd());
   if (main_window)
     main_window->KillTimer(2029);
@@ -61,6 +59,8 @@ RhinoVrRenderer::~RhinoVrRenderer()
     // to said VP...
     m_vr_vp->m_v.m_vp.ChangeViewportId(ON_nil_uuid);
   }
+
+  RhinoApp().Print(L"RhinoVR is OFF.\n");
 }
 
 bool RhinoVrRenderer::Initialize()
@@ -198,7 +198,7 @@ bool RhinoVrRenderer::Initialize()
   if(main_window)
     main_window->SetTimer(2029, 0, NULL);
 
-  RhinoApp().Print(L"RhinoVR has been initialized. Go ahead and put on the VR headset.\n");
+  RhinoApp().Print(L"RhinoVR is ON. Please put on the VR headset.\n");
 
   return true;
 }
