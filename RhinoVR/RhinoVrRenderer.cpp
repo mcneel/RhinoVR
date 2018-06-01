@@ -170,7 +170,6 @@ bool RhinoVrRenderer::Initialize()
   {
     // We imitate the VR view in the Rhino viewport.
     int vp_width = vp.ScreenPortWidth();
-    int vp_height = vp.ScreenPortHeight();
 
     double frus_aspect;
     vp.GetFrustumAspect(frus_aspect);
@@ -182,8 +181,6 @@ bool RhinoVrRenderer::Initialize()
     script.Format(L"-_ViewportProperties _Size %d %d _Enter", vp_new_width, vp_new_height);
 
     RhinoApp().RunScriptEx(m_doc_sn, script, nullptr, 0);
-
-    vp.SetScreenPort(0, vp_width, 0, vp_height);
 
     view->ActiveViewport().SetVP(vp, TRUE);
     view->Redraw();
@@ -724,6 +721,17 @@ bool RhinoVrRenderer::GetWorldPickLineAndClipRegion(
   if (b % 2 == 0) b += 1;
 
   line_vp.SetScreenPort(l, r, b, t);
+
+  // We need to force the frustum to be symmetric, otherwise the 
+  // center pixel will not be exactly where the pick line is.
+  double lf, rf, bf, tf, nf, ff;
+  line_vp.GetFrustum(&lf, &rf, &bf, &tf, &nf, &ff);
+
+  double new_tbf = max(abs(bf), abs(tf));
+  bf = -new_tbf;
+  tf =  new_tbf;
+
+  line_vp.SetFrustum(lf, rf, bf, tf, nf, ff);
 
   double frus_near = m_unit_scale * 0.01;
   line_vp.SetFrustumNearFar(frus_near, frus_near / line_vp.PerspectiveMinNearOverFar());
