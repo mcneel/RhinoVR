@@ -1,7 +1,7 @@
 # RhinoVR
 
-RhinoVR is a Rhino 6 plug-in which uses the HTC Vive head-mounted display to render Rhino viewports in immersive virtual reality.
+RhinoVR is a Rhino 6 plug-in which uses the HTC Vive or Oculus Rift head-mounted displays to render Rhino viewports in virtual reality.
 
 Requirements:
-* HTC Vive
+* HTC Vive or Oculus Rift
 * Rhino 6 (Service Release 6)

@@ -105,7 +105,8 @@
     </PreBuildEvent>
     <PostBuildEvent>
       <Command>Copy /Y "$(SolutionDir)OpenVR\bin\win64\openvr_api.dll" "$(OutDir)openvr_api.dll"
-Copy /Y "$(SolutionDir)OpenVR\bin\win64\openvr_api.pdb" "$(OutDir)openvr_api.pdb"</Command>
+Copy /Y "$(SolutionDir)OpenVR\bin\win64\openvr_api.pdb" "$(OutDir)openvr_api.pdb"
+Copy /Y "$(SolutionDir)OpenVR\LICENSE" "$(OutDir)LICENSE"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -134,7 +135,8 @@ Copy /Y "$(SolutionDir)OpenVR\bin\win64\openvr_api.pdb" "$(OutDir)openvr_api.pdb
     </ResourceCompile>
     <PostBuildEvent>
       <Command>Copy /Y "$(SolutionDir)OpenVR\bin\win64\openvr_api.dll" "$(OutDir)openvr_api.dll"
-Copy /Y "$(SolutionDir)OpenVR\bin\win64\openvr_api.pdb" "$(OutDir)openvr_api.pdb"</Command>
+Copy /Y "$(SolutionDir)OpenVR\bin\win64\openvr_api.pdb" "$(OutDir)openvr_api.pdb"
+Copy /Y "$(SolutionDir)OpenVR\LICENSE" "$(OutDir)LICENSE"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
