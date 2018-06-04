@@ -244,6 +244,9 @@ protected:
   // The transforms of all tracked devices.
   vr::TrackedDevicePose_t m_device_poses[vr::k_unMaxTrackedDeviceCount];
 
+  vr::TrackedDeviceIndex_t m_device_index_left_hand;  // Device index for left hand controller.
+  vr::TrackedDeviceIndex_t m_device_index_right_hand; // Device index for right hand controller.
+
   // The device data of all tracked devices.
   ON_ClassArray<RhinoVrDeviceData> m_device_data;
 

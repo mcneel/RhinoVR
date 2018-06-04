@@ -466,8 +466,6 @@ bool RhinoVrRenderer::UpdateState()
     return false;
   }
 
-  ON_2dPoint touchpad_point = ON_2dPoint::Origin;
-
   for (vr::TrackedDeviceIndex_t device_idx = 0; device_idx < vr::k_unMaxTrackedDeviceCount; device_idx++)
   {
     if (m_hmd->GetTrackedDeviceClass(device_idx) != vr::TrackedDeviceClass_Controller)
@@ -478,48 +476,46 @@ bool RhinoVrRenderer::UpdateState()
     {
       RhinoVrDeviceController& controller = m_device_data[device_idx].m_controller;
       GetRhinoVrControllerState(state, controller);
-
-      ON_2dPoint tpp = controller.m_touchpad_touch_point;
-
-      if (tpp != ON_2dPoint::Origin)
-      {
-        if (abs(tpp.x) > abs(touchpad_point.x))
-          touchpad_point.x = tpp.x;
-
-        if (abs(tpp.y) > abs(touchpad_point.y))
-          touchpad_point.y = tpp.y;
-      }
     }
   }
 
-  double camera_rotation = 0.0;
-  double camera_translation_distance = 0.0;
+  m_device_index_left_hand = m_hmd->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_LeftHand);
+  m_device_index_right_hand = m_hmd->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_RightHand);
 
-  if (touchpad_point != ON_2dPoint::Origin)
+  ON_2dVector camera_translation_vector = ON_2dVector::ZeroVector;
+  ON_2dPoint camera_rotation_angles = ON_2dPoint::Origin;
+
+  if (!m_doc->InCommand())
   {
-    if (!m_doc->InCommand())
+    // If both X and Y magnitudes are under 0.6 then we don't move/rotate.
+    // In other words, the touchpad needs to be touched close to the edge.
+    const double threshold = 0.6;
+
+    if(m_device_index_left_hand >= 0 && m_device_index_left_hand < vr::k_unMaxTrackedDeviceCount)
     {
-      // If both X and Y magnitudes are under 0.6 then we don't move/rotate.
-      // In other words, the touchpad needs to be touched close to the edge.
-      const double threshold = 0.6;
+      RhinoVrDeviceController& controller = m_device_data[m_device_index_left_hand].m_controller;
+      ON_2dVector analog_vec = controller.m_touchpad_touch_point;
 
-      double x = touchpad_point.x;
-      double x_sign = (x >= 0.0 ? 1.0 : -1.0);
-
-      if (abs(x) >= threshold)
+      if (analog_vec.Length() >= threshold)
       {
-        double x_scaled = x_sign * (abs(x) - threshold)*(1.0 / (1.0 - threshold));
-        camera_rotation = -2.0*x_scaled*ON_DEGREES_TO_RADIANS;
+        ON_2dVector offset_vec = -threshold * analog_vec.UnitVector();
+        ON_2dVector translate_vec = analog_vec + offset_vec;
+
+        camera_translation_vector = 0.25*m_unit_scale*translate_vec;
       }
+    }
 
-      double y = touchpad_point.y;
-      double y_sign = (y >= 0.0 ? 1.0 : -1.0);
+    if (m_device_index_right_hand >= 0 && m_device_index_right_hand < vr::k_unMaxTrackedDeviceCount)
+    {
+      RhinoVrDeviceController& controller = m_device_data[m_device_index_right_hand].m_controller;
+      ON_2dVector analog_vec = controller.m_touchpad_touch_point;
 
-      if (abs(y) >= threshold)
+      if (analog_vec.Length() >= threshold)
       {
-        double y_scaled = y_sign * (abs(y) - threshold)*(1.0 / (1.0 - threshold));
+        ON_2dVector offset_vec = -threshold * analog_vec.UnitVector();
+        ON_2dVector rotation_angles = analog_vec + offset_vec;
 
-        camera_translation_distance = 0.25*y_scaled*m_unit_scale;
+        camera_rotation_angles = -4.0*ON_DEGREES_TO_RADIANS*rotation_angles;
       }
     }
   }
@@ -578,15 +574,26 @@ bool RhinoVrRenderer::UpdateState()
   // Transform the HMD to it's world position last frame.
   m_vp_hmd.Transform(hmd_to_world_xform);
 
-  // Apply rotation due to controller.
-  ON_3dPoint hmd_loc = m_vp_hmd.CameraLocation();
-  m_vp_hmd.Rotate(camera_rotation, ON_3dVector::ZAxis, hmd_loc);
+  {
+    // Apply rotation due to controller.
+    ON_3dPoint hmd_loc = m_vp_hmd.CameraLocation();
+    m_vp_hmd.Rotate(camera_rotation_angles.x, ON_3dVector::ZAxis, hmd_loc);
 
-  // Apply translation due to controller.
-  ON_3dVector hmd_dir   = m_vp_hmd.CameraDirection();
-  ON_3dVector hmd_dolly = camera_translation_distance * hmd_dir;
-  m_vp_hmd.DollyCamera(hmd_dolly);
-  m_vp_hmd.DollyFrustum(hmd_dolly.z);
+    ON_3dVector hmd_dir = m_vp_hmd.CameraDirection();
+    ON_3dVector hmd_up = m_vp_hmd.CameraUp();
+    ON_3dVector hmd_right = ON_CrossProduct(hmd_dir, hmd_up);
+    m_vp_hmd.Rotate(camera_rotation_angles.y, -hmd_right, hmd_loc);
+  }
+
+  {
+    // Apply translation due to controller.
+    ON_3dVector hmd_dir = m_vp_hmd.CameraDirection();
+    ON_3dVector hmd_up  = m_vp_hmd.CameraUp();
+    ON_3dVector hmd_right = ON_CrossProduct(hmd_dir, hmd_up);
+    ON_3dVector hmd_dolly = camera_translation_vector.x * hmd_right + camera_translation_vector.y * hmd_dir;
+    m_vp_hmd.DollyCamera(hmd_dolly);
+    m_vp_hmd.DollyFrustum(hmd_dolly.z);
+  }
 
   // Now extract the final xform which includes movements from the controller.
   ON_Xform hmd_to_world_final_xform;
