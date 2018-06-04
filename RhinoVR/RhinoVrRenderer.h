@@ -135,12 +135,21 @@ protected:
     ON_ClippingRegion& clip_region, ON_Viewport& line_vp, ON_2iPoint& line_pixel);
 
 protected: // Timing related functions
+
+  // Measures time spent processing input and drawing a stereo frame.
   void FrameTimingStart();
   void FrameTimingStop();
+
+  // Measures time spent outside RhinoVR.
   void RhinoTimingStart();
   void RhinoTimingStop();
+
+  // Measures time spent waiting for vertical sync.
   void VsyncTimingStart();
   void VsyncTimingStop();
+
+  // Measures the total frame time and frames per second.
+  void FpsTiming();
 
   RhTimestamp TimingStart();
   void TimingStop(const RhTimestamp& start_time, const ON_wString& message);
@@ -148,6 +157,9 @@ protected: // Timing related functions
   RhTimestamp m_frame_time_start;
   RhTimestamp m_rhino_time_start;
   RhTimestamp m_vsync_time_start;
+  RhTimestamp m_fps_time_start;
+
+  unsigned int m_frame_counter;
 
 protected:
   // The serial number of the Rhino document

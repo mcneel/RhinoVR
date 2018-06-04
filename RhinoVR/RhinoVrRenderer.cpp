@@ -2,7 +2,8 @@
 #include "RhinoVrRenderer.h"
 #include <gl/GL.h>
 
-//#define RHINOVR_TIMING_ENABLED
+//#define RHINOVR_FRAME_TIMING
+//#define RHINOVR_DETAILED_TIMING
 
 #pragma comment(lib, "../OpenVR/lib/win64/openvr_api.lib")
 
@@ -30,6 +31,8 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   , m_frame_time_start(0)
   , m_rhino_time_start(0)
   , m_vsync_time_start(0)
+  , m_fps_time_start(0)
+  , m_frame_counter(0)
 {
   memset(m_device_poses, 0, sizeof(m_device_poses));
   
@@ -107,6 +110,11 @@ bool RhinoVrRenderer::Initialize()
 
   uint32_t rec_width, rec_height;
   m_hmd->GetRecommendedRenderTargetSize(&rec_width, &rec_height);
+
+  // For now, let's force the resolution to be the same as the native
+  // screen resolution of both the Vive and the Oculus.
+  rec_width = 1080;
+  rec_height = 1200;
 
   CRhinoView* view = CRhinoView::FromRuntimeSerialNumber(m_view_sn);
   if (view == nullptr)
@@ -664,7 +672,7 @@ bool RhinoVrRenderer::Draw()
     return false;
   }
 
-#ifdef RHINOVR_TIMING_ENABLED
+#if defined(RHINOVR_FRAME_TIMING) || defined(RHINOVR_DETAILED_TIMING)
   ::glFlush();
   ::glFinish();
 #endif
@@ -1042,6 +1050,7 @@ void RhinoVrRenderer::ProcessInputAndRenderFrame()
       return;
 
     FrameTimingStop();
+    FpsTiming();
 
     DetachDocAndView();
   }
@@ -1210,16 +1219,47 @@ void RhinoVrRenderer::VsyncTimingStop()
   TimingStop(m_vsync_time_start, L"Vsync time");
 }
 
+void RhinoVrRenderer::FpsTiming()
+{
+#ifdef RHINOVR_FRAME_TIMING
+  if (m_fps_time_start == 0)
+  {
+    m_fps_time_start = TimingStart();
+  }
+  else
+  {
+    m_frame_counter++;
+
+    double time_seconds = RhinoGetTimeInSecondsSince(m_fps_time_start);
+    if (time_seconds >= 1.0)
+    {
+      double frame_time_seconds = time_seconds / m_frame_counter;
+      double frames_per_second = 1.0 / frame_time_seconds;
+
+      ON_wString str;
+      str.Format(L"Full frame time: %.1f ms. Frames per second: %.1f\n", 1000.0*frame_time_seconds, frames_per_second);
+
+      OutputDebugString(str);
+
+      time_seconds = 0.0;
+      m_frame_counter = 0;
+
+      m_fps_time_start = TimingStart();
+    }
+  }
+#endif
+}
+
 RhTimestamp RhinoVrRenderer::TimingStart()
 {
-#ifdef RHINOVR_TIMING_ENABLED
+#if defined(RHINOVR_FRAME_TIMING) || defined(RHINOVR_DETAILED_TIMING)
   return RhinoGetTimestamp();
 #else
   return (RhTimestamp)0;
 #endif
 }
 
-#ifdef RHINOVR_TIMING_ENABLED
+#ifdef RHINOVR_DETAILED_TIMING
 void RhinoVrRenderer::TimingStop(const RhTimestamp& start_time, const ON_wString& message)
 {
   if (start_time == 0)
@@ -1228,7 +1268,7 @@ void RhinoVrRenderer::TimingStop(const RhTimestamp& start_time, const ON_wString
   double time_millis = 1000.0*RhinoGetTimeInSecondsSince(start_time);
   
   ON_wString str;
-  str.Format(L"%s: %f ms\n", message.Array(), time_millis);
+  str.Format(L"%s: %.1f ms\n", message.Array(), time_millis);
 
   OutputDebugString(str);
 }
