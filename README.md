@@ -18,4 +18,5 @@ Start Rhino and load the file you want to view in VR. Make sure a perspective vi
 * A Rhino Enter key press can be mimicked using the VR controller by pressing the trigger button (Vive) or the A-button (Rift).
 * A Rhino Esc key press can be mimicked by squeezing the grip buttons (Vive) or by pressing the primary trigger button (Rift).
 
+## Licenses
 RhinoVR uses the open source library OpenVR. See license details in the OpenVR subfolder.
