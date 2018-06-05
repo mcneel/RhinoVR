@@ -483,13 +483,14 @@ bool RhinoVrRenderer::UpdateState()
   m_device_index_right_hand = m_hmd->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_RightHand);
 
   ON_2dVector camera_translation_vector = ON_2dVector::ZeroVector;
-  ON_2dPoint camera_rotation_angles = ON_2dPoint::Origin;
+  double camera_horizontal_rotation = 0.0;
+  double camera_translation_updown = 0.0;
 
   if (!m_doc->InCommand())
   {
     // If both X and Y magnitudes are under 0.6 then we don't move/rotate.
     // In other words, the touchpad needs to be touched close to the edge.
-    const double threshold = 0.6;
+    const double threshold = 0.4;
 
     if(m_device_index_left_hand >= 0 && m_device_index_left_hand < vr::k_unMaxTrackedDeviceCount)
     {
@@ -515,7 +516,8 @@ bool RhinoVrRenderer::UpdateState()
         ON_2dVector offset_vec = -threshold * analog_vec.UnitVector();
         ON_2dVector rotation_angles = analog_vec + offset_vec;
 
-        camera_rotation_angles = -4.0*ON_DEGREES_TO_RADIANS*rotation_angles;
+        camera_horizontal_rotation = -4.0*ON_DEGREES_TO_RADIANS*rotation_angles.x;
+        camera_translation_updown = 0.15*m_unit_scale*rotation_angles.y;
       }
     }
   }
@@ -577,12 +579,7 @@ bool RhinoVrRenderer::UpdateState()
   {
     // Apply rotation due to controller.
     ON_3dPoint hmd_loc = m_vp_hmd.CameraLocation();
-    m_vp_hmd.Rotate(camera_rotation_angles.x, ON_3dVector::ZAxis, hmd_loc);
-
-    ON_3dVector hmd_dir = m_vp_hmd.CameraDirection();
-    ON_3dVector hmd_up = m_vp_hmd.CameraUp();
-    ON_3dVector hmd_right = ON_CrossProduct(hmd_dir, hmd_up);
-    m_vp_hmd.Rotate(camera_rotation_angles.y, -hmd_right, hmd_loc);
+    m_vp_hmd.Rotate(camera_horizontal_rotation, ON_3dVector::ZAxis, hmd_loc);
   }
 
   {
@@ -590,7 +587,12 @@ bool RhinoVrRenderer::UpdateState()
     ON_3dVector hmd_dir = m_vp_hmd.CameraDirection();
     ON_3dVector hmd_up  = m_vp_hmd.CameraUp();
     ON_3dVector hmd_right = ON_CrossProduct(hmd_dir, hmd_up);
-    ON_3dVector hmd_dolly = camera_translation_vector.x * hmd_right + camera_translation_vector.y * hmd_dir;
+
+    ON_3dVector hmd_dolly = ON_3dVector::ZeroVector;
+    hmd_dolly += camera_translation_vector.x * hmd_right;
+    hmd_dolly += camera_translation_vector.y * hmd_dir;
+    hmd_dolly += camera_translation_updown * ON_3dVector::ZAxis;
+
     m_vp_hmd.DollyCamera(hmd_dolly);
     m_vp_hmd.DollyFrustum(hmd_dolly.z);
   }
