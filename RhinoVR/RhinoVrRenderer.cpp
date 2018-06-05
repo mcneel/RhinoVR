@@ -812,6 +812,17 @@ void RhinoVrRenderer::GetRhinoVrControllerState(
     controller.m_trigger_button_released = !is_down && was_down;
     controller.m_trigger_button_value    = value;
   }
+
+  {
+    static uint64_t a_btn_mask = vr::ButtonMaskFromId(vr::EVRButtonId::k_EButton_A);
+
+    bool was_down = controller.m_a_button_down;
+    bool is_down  = (state.ulButtonPressed & a_btn_mask);
+
+    controller.m_a_button_down     = is_down;
+    controller.m_a_button_pressed  = is_down && !was_down;
+    controller.m_a_button_released = !is_down && was_down;
+  }
 }
 
 void RhinoVrRenderer::RhinoVrGetPoint(const ON_Xform& picking_device_xform)
@@ -1012,7 +1023,7 @@ bool RhinoVrRenderer::HandleInput()
       if (!AttachDocAndView())
         return false;
     }
-    else if (controller.m_trigger_button_pressed)
+    else if (controller.m_trigger_button_pressed || controller.m_a_button_pressed)
     {
       RhinoApp().ExecuteCommand(m_doc_sn, L"_Enter");
 

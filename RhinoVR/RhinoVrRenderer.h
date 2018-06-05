@@ -44,6 +44,10 @@ struct RhinoVrDeviceController
   bool m_trigger_button_pressed = false;
   bool m_trigger_button_released = false;
 
+  bool m_a_button_down = false;
+  bool m_a_button_pressed = false;
+  bool m_a_button_released = false;
+
   float m_trigger_button_value = 0.0f;
   ON_2dPoint m_touchpad_touch_point = ON_2dPoint::Origin;
 };
