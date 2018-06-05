@@ -7,7 +7,7 @@ RhinoVR is a Rhino 6 plug-in which uses the HTC Vive or Oculus Rift head-mounted
 * Rhino 6 (Service Release 6)
 
 ## Installation
-Make sure you have at least Rhino 6 version 6.6.18152.23151. This version is currently available as a release candidate. Download the RhinoVR RHI file from here and double click the file to install RhinoVR. The installer should indicate that it has installed RHinoVR for Rhino 6.
+Make sure you have at least Rhino 6 version 6.6.18152.23151. This version is currently available as a service release candidate. To enable the downloading of service release candidates, go to Tools -> Options... -> Updates and Statistics -> Update frequency: Service Release Candidate. Then click "Check Now...". Download the RhinoVR RHI file from here and double click the file to install RhinoVR. The installer should indicate that it has installed RHinoVR for Rhino 6.
 
 ## Usage
 Start Rhino and load the file you want to view in VR. Make sure a perspective viewport is selected and that it is set to the display mode you want to use. Type RhinoVR into the command line. Rhino tells you when it is ready and asks you to put the VR headset on.
