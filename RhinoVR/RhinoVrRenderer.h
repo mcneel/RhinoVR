@@ -77,13 +77,13 @@ public:
 
 protected:
   // Converts an OpenVR matrix to an ON_Xform.
-  ON_Xform OpenVrMatrixToXform(const vr::HmdMatrix34_t& matPose);
+  ON_Xform OpenVrMatrixToXform(const vr::HmdMatrix34_t& matrix);
 
   // Loads all needed render models from the VR library.
   void SetupRenderModels();
 
   // Loads a render model for a specific device.
-  void SetupRenderModelForDevice(vr::TrackedDeviceIndex_t unTrackedDeviceIndex);
+  void SetupRenderModelForDevice(vr::TrackedDeviceIndex_t device_index);
 
   // Loads the "hidden area mesh" geometry which is intended to block
   // out the parts of the screens which won't be visible to the eyes.
@@ -92,7 +92,7 @@ protected:
 
   // Returns a render model by name. If it hasn't been loaded yet, it will
   // first be loaded from the VR library.
-  RhinoVrDeviceModel* FindOrLoadRenderModel(const char* pchRenderModelName);
+  RhinoVrDeviceModel* FindOrLoadRenderModel(const char* render_model_name);
 
   // Provide device display conduits with updated device information.
   void UpdateDeviceDisplayConduits(
