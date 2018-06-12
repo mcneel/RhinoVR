@@ -10,10 +10,10 @@
 class RhinoVrDeviceModel
 {
 public:
-  RhinoVrDeviceModel(const ON_String& sRenderModelName);
+  RhinoVrDeviceModel(const ON_String& device_name);
   bool Initialize(
-    const vr::RenderModel_t& vrModel,
-    const vr::RenderModel_TextureMap_t& vrDiffuseTexture,
+    const vr::RenderModel_t& model,
+    const vr::RenderModel_TextureMap_t& diffuse_texture,
     double unit_scale,
     const CRhinoDoc& doc);
 

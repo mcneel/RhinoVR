@@ -95,7 +95,7 @@ bool RhinoVrRenderer::Initialize()
   if (m_compositor == nullptr || ovr_error != vr::VRInitError_None)
   {
     ON_String str;
-    str.Format("Unable to initialize VR compositor : %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
+    str.Format("Unable to initialize VR compositor: %s\n", vr::VR_GetVRInitErrorAsEnglishDescription(ovr_error));
     RhinoApp().Print(str);
   }
 
@@ -104,7 +104,7 @@ bool RhinoVrRenderer::Initialize()
     return false;
   
   m_unit_scale = rhino_doc->ModelUnits().MetersPerUnit();
-  m_pointer_line = ON_Line(m_unit_scale*ON_3dPoint(0, 0, -0.02f), m_unit_scale*ON_3dPoint(0, 0, -500.0f));
+  m_pointer_line = ON_Line(m_unit_scale*ON_3dPoint(0, 0, -0.02), m_unit_scale*ON_3dPoint(0, 0, -500.0));
 
   SetupRenderModels();
 
@@ -211,18 +211,18 @@ bool RhinoVrRenderer::Initialize()
   return true;
 }
 
-ON_String GetTrackedDeviceString(vr::IVRSystem& hmd, vr::TrackedDeviceIndex_t device_idx, vr::TrackedDeviceProperty device_property, vr::TrackedPropertyError* peError = nullptr)
+ON_String GetTrackedDeviceString(vr::IVRSystem& hmd, vr::TrackedDeviceIndex_t device_idx, vr::TrackedDeviceProperty device_property, vr::TrackedPropertyError* error = nullptr)
 {
-  uint32_t required_buffer_len = hmd.GetStringTrackedDeviceProperty(device_idx, device_property, NULL, 0, peError);
+  uint32_t required_buffer_len = hmd.GetStringTrackedDeviceProperty(device_idx, device_property, NULL, 0, error);
   if (required_buffer_len == 0)
     return ON_String("");
 
-  char* pchBuffer = new char[required_buffer_len];
+  char* buffer = new char[required_buffer_len];
   
-  required_buffer_len = hmd.GetStringTrackedDeviceProperty(device_idx, device_property, pchBuffer, required_buffer_len, peError);
-  ON_String device_string = pchBuffer;
+  hmd.GetStringTrackedDeviceProperty(device_idx, device_property, buffer, required_buffer_len, error);
+  ON_String device_string = buffer;
 
-  delete[] pchBuffer;
+  delete[] buffer;
 
   return device_string;
 }
@@ -311,7 +311,7 @@ void RhinoVrRenderer::SetupRenderModelForDevice(vr::TrackedDeviceIndex_t device_
   ON_String render_model_name = GetTrackedDeviceString(*m_hmd, device_index, vr::Prop_RenderModelName_String);
 
   RhinoVrDeviceModel* render_model = FindOrLoadRenderModel(render_model_name);
-  if (!render_model)
+  if (render_model == nullptr)
   {
     ON_String tracking_system_name = GetTrackedDeviceString(*m_hmd, device_index, vr::Prop_TrackingSystemName_String);
     RhinoApp().Print("Unable to load render model for tracked device %d (%s.%s)",
@@ -1127,8 +1127,8 @@ ON_Xform RhinoVrRenderer::OpenVrMatrixToXform(const vr::HmdMatrix34_t& matrix)
   return xform;
 }
 
-RhinoVrDeviceModel::RhinoVrDeviceModel(const ON_String& sRenderModelName)
-  : m_device_name(sRenderModelName)
+RhinoVrDeviceModel::RhinoVrDeviceModel(const ON_String& device_name)
+  : m_device_name(device_name)
 {
 }
 
@@ -1158,8 +1158,6 @@ bool RhinoVrDeviceModel::Initialize(
 
   m_device_mesh.m_F.SetCapacity(model.unTriangleCount);
   m_device_mesh.m_F.SetCount(model.unTriangleCount);
-
-  const int index_count = model.unTriangleCount * 3;
 
   for (unsigned int fi = 0, idx = 0; fi < model.unTriangleCount; ++fi)
   {

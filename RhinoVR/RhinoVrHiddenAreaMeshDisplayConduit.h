@@ -8,7 +8,7 @@ public:
   RhinoVrHiddenAreaMeshDisplayConduit();
 
   bool ExecConduit(CRhinoDisplayPipeline& dp, UINT nActiveChannel, bool& bTerminateChannel) override;
-  void Enable(unsigned int uiDocSerialNumber);
+  void Enable(unsigned int doc_sn);
 
   void SetHiddenAreaMesh(const ON_Mesh* device_mesh, vr::EVREye eye);
   void SetHiddenAreaMeshXform(const ON_Xform& device_xform, vr::EVREye eye);

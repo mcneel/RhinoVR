@@ -48,9 +48,9 @@ bool RhinoVrHiddenAreaMeshDisplayConduit::ExecConduit(CRhinoDisplayPipeline& dp,
   return true;
 }
 
-void RhinoVrHiddenAreaMeshDisplayConduit::Enable(unsigned int uiDocSerialNumber)
+void RhinoVrHiddenAreaMeshDisplayConduit::Enable(unsigned int doc_sn)
 {
-  CRhinoDisplayConduit::Enable(uiDocSerialNumber);
+  CRhinoDisplayConduit::Enable(doc_sn);
 }
 
 void RhinoVrHiddenAreaMeshDisplayConduit::SetHiddenAreaMesh(const ON_Mesh* hidden_area_mesh, vr::EVREye eye)

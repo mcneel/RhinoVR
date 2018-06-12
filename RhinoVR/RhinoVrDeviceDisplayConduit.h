@@ -18,8 +18,6 @@ public:
   void Empty();
 
 private:
-  unsigned int m_uiDocSerialNumber;
-
   double m_frus_near_suggestion;
   double m_frus_far_suggestion;
 
