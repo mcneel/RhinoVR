@@ -66,6 +66,42 @@ RhinoVrRenderer::~RhinoVrRenderer()
   RhinoApp().Print(L"RhinoVR is OFF.\n");
 }
 
+HWND FindApplicationWindow(const wchar_t* app_title_string)
+{
+  const int app_string_length = (int)wcslen(app_title_string);
+
+  const int window_text_length = 256;
+  wchar_t window_text[window_text_length];
+
+  auto hwnd_parent = FindWindowEx(nullptr, nullptr, nullptr, nullptr);
+
+  while (hwnd_parent)
+  {
+    if (GetWindowText(hwnd_parent, window_text, window_text_length))
+    {
+      ON_wString str(window_text);
+      if (str.Find(app_title_string) >= 0)
+      {
+        return hwnd_parent;
+      }
+    }
+
+    hwnd_parent = FindWindowEx(nullptr, hwnd_parent, nullptr, nullptr);
+  }
+
+  return nullptr;
+}
+
+void InitializeAppWindow(RhinoVrAppWindow& app, const ON_wString& app_title)
+{
+  app.m_enabled = true;
+  app.m_title = app_title;
+  app.m_crc   = app_title.DataCRC(0);
+  app.m_hwnd  = FindApplicationWindow(app_title);
+  app.m_plane = ON_Plane::World_xy;
+  app.m_plane.Rotate(45.0*ON_DEGREES_TO_RADIANS, ON_3dVector::XAxis);
+}
+
 bool RhinoVrRenderer::Initialize()
 {
   RhinoApp().Print(L"Initializing RhinoVR...\n");
@@ -193,6 +229,9 @@ bool RhinoVrRenderer::Initialize()
     view->ActiveViewport().SetVP(vp, TRUE);
     view->Redraw();
   }
+
+  InitializeAppWindow(m_gh_window, L"Grasshopper");
+  InitializeAppWindow(m_rh_window, L"Rhinoceros 6");
 
   // ATTENTION: The following lines are a (hopefully temporary) hack.
   // Rhino uses MFC, and MFC has a main message loop which calls
@@ -414,6 +453,77 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
     if (is_controller)
     {
       ddc.AddLine(m_pointer_line.from, m_pointer_line.to, ON_Color::SaturatedGreen);
+
+      RhinoVrAppWindow* app_ptr = nullptr;
+      if (device_idx == m_device_index_left_hand)
+        app_ptr = &m_gh_window;
+      else if (device_idx == m_device_index_right_hand)
+        app_ptr = &m_rh_window;
+
+      if (app_ptr && app_ptr->m_enabled && app_ptr->m_hwnd)
+      {
+        RhinoVrAppWindow& app = *app_ptr;
+
+        RECT gh_window_dim;
+        if (GetClientRect(app.m_hwnd, (LPRECT)&gh_window_dim))
+        {
+          LONG x = gh_window_dim.left;
+          LONG y = gh_window_dim.top;
+          LONG width = gh_window_dim.right - x;
+          LONG height = gh_window_dim.bottom - y;
+
+          HDC app_hdc = GetDC(app.m_hwnd);
+
+          if (app.m_bitmap == nullptr || app.m_width != width || app.m_height != height)
+          {
+            if (app.m_bitmap)
+            {
+              DeleteObject(app.m_bitmap);
+            }
+
+            app.m_bitmap = CreateCompatibleBitmap(app_hdc, width, height);
+
+            if (app.m_bitmap_hdc)
+            {
+              DeleteObject(app.m_bitmap_hdc);
+              app.m_bitmap_hdc = nullptr;
+            }
+          }
+
+          if (app.m_bitmap_hdc == nullptr)
+          {
+            app.m_bitmap_hdc = CreateCompatibleDC(app_hdc);
+          }
+
+          if (app.m_bitmap && app.m_bitmap_hdc)
+          {
+            if (SelectObject(app.m_bitmap_hdc, app.m_bitmap))
+            {
+              if (BitBlt(app.m_bitmap_hdc, 0, 0, width, height, app_hdc, 0, 0, SRCCOPY))
+              {
+                CRhinoDib gh_dib(app.m_bitmap);
+
+                ON_FileReference file_ref = gh_dib.GetTextureFileReference(app.m_crc);
+
+                ON_Texture tex;
+                tex.m_mode = ON_Texture::MODE::decal_texture;
+                tex.m_type = ON_Texture::TYPE::bitmap_texture;
+                tex.m_minfilter = tex.m_magfilter = ON_Texture::FILTER::linear_filter;
+                tex.m_image_file_reference = file_ref;
+
+                ON_Material mat;
+                mat.AddTexture(tex);
+
+                app.m_material = mat;
+
+                double aspect = double(width) / height;
+
+                ddc.AddPlane(app.m_plane, 0.25*aspect, 0.25, &app.m_material);
+              }
+            }
+          }
+        }
+      }
     }
 
     const ON_Mesh& device_mesh = device_model->m_device_mesh;

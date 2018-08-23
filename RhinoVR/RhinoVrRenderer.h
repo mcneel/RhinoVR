@@ -52,6 +52,20 @@ struct RhinoVrDeviceController
   ON_2dPoint m_touchpad_touch_point = ON_2dPoint::Origin;
 };
 
+struct RhinoVrAppWindow
+{
+  bool       m_enabled = false;
+  ON_wString m_title;
+  ON__UINT32 m_crc = 0;
+  HWND       m_hwnd = nullptr;
+  HBITMAP    m_bitmap = nullptr;
+  HDC        m_bitmap_hdc = nullptr;
+  LONG       m_width = 0;
+  LONG       m_height = 0;
+  ON_Plane   m_plane;
+  CDisplayPipelineMaterial m_material;
+};
+
 // This struct contains up-to-date information of a tracked
 // VR device, such as location/orientation, geometry, and
 // the state of any buttons/triggers/touchpads.
@@ -256,6 +270,9 @@ protected:
 
   // The render models of all tracked devices.
   ON_ClassArray<std::unique_ptr<RhinoVrDeviceModel>> m_device_render_models;
+
+  RhinoVrAppWindow m_gh_window;
+  RhinoVrAppWindow m_rh_window;
 
   ON_Mesh m_hidden_mesh_left;  // The hidden area mesh for the left eye.
   ON_Mesh m_hidden_mesh_right; // The hidden area mesh for the right eye.

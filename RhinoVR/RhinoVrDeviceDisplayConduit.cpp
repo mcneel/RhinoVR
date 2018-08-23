@@ -13,6 +13,7 @@ RhinoVrDeviceDisplayConduit::RhinoVrDeviceDisplayConduit()
   , m_device_material(nullptr)
   , m_device_mesh_xform(ON_Xform::IdentityTransformation)
   , m_device_cache_handle(nullptr)
+  , m_mesh_plane_cache_handles()
   , m_bounding_box(ON_BoundingBox::UnsetBoundingBox)
 {
 }
@@ -51,6 +52,12 @@ bool RhinoVrDeviceDisplayConduit::ExecConduit(
         }
 
         dp.DrawShadedMeshes(&m_device_mesh, 1, m_device_material, &m_device_cache_handle);
+
+        for (int i = 0; i < m_mesh_planes.Count(); ++i)
+        {
+          const ON_Mesh* mesh = &m_mesh_planes[i];
+          dp.DrawShadedMeshes(&mesh, 1, m_plane_materials[i], &m_mesh_plane_cache_handles[i]);
+        }
 
         dp.PopModelTransform();
       }
@@ -104,6 +111,40 @@ void RhinoVrDeviceDisplayConduit::SetFrustumNearFarSuggestion(double frus_near, 
   }
 }
 
+void RhinoVrDeviceDisplayConduit::AddPlane(const ON_Plane& plane, double extent_x, double extent_y, const CDisplayPipelineMaterial* material)
+{
+  ON_Mesh mesh;
+  mesh.m_V.Append(ON_3fPoint(-float(extent_x), -float(extent_y), 0.0f));
+  mesh.m_V.Append(ON_3fPoint( float(extent_x), -float(extent_y), 0.0f));
+  mesh.m_V.Append(ON_3fPoint( float(extent_x),  float(extent_y), 0.0f));
+  mesh.m_V.Append(ON_3fPoint(-float(extent_x),  float(extent_y), 0.0f));
+
+  mesh.m_T.Append(ON_2fPoint(0.0f, 1.0f));
+  mesh.m_T.Append(ON_2fPoint(1.0f, 1.0f));
+  mesh.m_T.Append(ON_2fPoint(1.0f, 0.0f));
+  mesh.m_T.Append(ON_2fPoint(0.0f, 0.0f));
+
+  ON_MeshFace& face = mesh.m_F.AppendNew();
+  face.vi[0] = 0;
+  face.vi[1] = 1;
+  face.vi[2] = 2;
+  face.vi[3] = 3;
+
+  ON_Xform xform;
+  xform.Rotation(ON_Plane::World_xy, plane);
+
+  mesh.Transform(xform);
+
+  m_bounding_box.Set(mesh.m_V[0], TRUE);
+  m_bounding_box.Set(mesh.m_V[1], TRUE);
+  m_bounding_box.Set(mesh.m_V[2], TRUE);
+  m_bounding_box.Set(mesh.m_V[3], TRUE);
+
+  m_mesh_planes.Append(mesh);
+  m_plane_materials.Append(material);
+  m_mesh_plane_cache_handles.Append(nullptr);
+}
+
 void RhinoVrDeviceDisplayConduit::AddLine(const ON_3dPoint& from, const ON_3dPoint& to, const ON_Color& color)
 {
   m_start_pts.Append(from);
@@ -125,4 +166,8 @@ void RhinoVrDeviceDisplayConduit::Empty()
   m_draw_device_mesh = false;
   m_device_mesh = nullptr;
   m_device_material = nullptr;
+
+  m_planes.Empty();
+  m_mesh_planes.Empty();
+  m_plane_materials.Empty();
 }
