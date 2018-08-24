@@ -58,11 +58,12 @@ struct RhinoVrAppWindow
   ON_wString m_title;
   ON__UINT32 m_crc = 0;
   HWND       m_hwnd = nullptr;
-  HBITMAP    m_bitmap = nullptr;
-  HDC        m_bitmap_hdc = nullptr;
+  CRhinoDib  m_dib;
   LONG       m_width = 0;
   LONG       m_height = 0;
   ON_Plane   m_plane;
+  double     m_plane_width = 0.0;
+  double     m_plane_height = 0.0;
   CDisplayPipelineMaterial m_material;
 };
 
@@ -273,6 +274,8 @@ protected:
 
   RhinoVrAppWindow m_gh_window;
   RhinoVrAppWindow m_rh_window;
+
+  RhTimestamp m_last_window_update;
 
   ON_Mesh m_hidden_mesh_left;  // The hidden area mesh for the left eye.
   ON_Mesh m_hidden_mesh_right; // The hidden area mesh for the right eye.

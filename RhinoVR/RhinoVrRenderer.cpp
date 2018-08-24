@@ -33,6 +33,7 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   , m_vsync_time_start(0)
   , m_fps_time_start(0)
   , m_frame_counter(0)
+  , m_last_window_update(0)
 {
   memset(m_device_poses, 0, sizeof(m_device_poses));
   
@@ -233,6 +234,8 @@ bool RhinoVrRenderer::Initialize()
   InitializeAppWindow(m_gh_window, L"Grasshopper");
   InitializeAppWindow(m_rh_window, L"Rhinoceros 6");
 
+  m_last_window_update = RhinoGetTimestamp();
+
   // ATTENTION: The following lines are a (hopefully temporary) hack.
   // Rhino uses MFC, and MFC has a main message loop which calls
   // GetMessage(). If there are no messages in the message queue,
@@ -429,6 +432,30 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
 {
   bool is_input_available = m_hmd->IsInputAvailable();
 
+  RhTimestamp now = RhinoGetTimestamp();
+  double time_since_update = RhinoGetTimeInSecondsBetween(m_last_window_update, now);
+
+  static int last_window_updated = 1;
+
+  bool gh_window_needs_update = false;
+  bool rh_window_needs_update = false;
+
+  if (time_since_update >= 1.0 / 20.0)
+  {
+    m_last_window_update = now;
+
+    if (last_window_updated == 0)
+    {
+      rh_window_needs_update = true;
+      last_window_updated = 1;
+    }
+    else
+    {
+      gh_window_needs_update = true;
+      last_window_updated = 0;
+    }
+  }
+
   for (uint32_t device_idx = 0; device_idx < vr::k_unMaxTrackedDeviceCount; device_idx++)
   {
     RhinoVrDeviceData& device_data = m_device_data[device_idx];
@@ -455,74 +482,65 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
       ddc.AddLine(m_pointer_line.from, m_pointer_line.to, ON_Color::SaturatedGreen);
 
       RhinoVrAppWindow* app_ptr = nullptr;
+      bool current_window_needs_update = false;
+
       if (device_idx == m_device_index_left_hand)
+      {
         app_ptr = &m_gh_window;
+        current_window_needs_update = gh_window_needs_update;
+      }
       else if (device_idx == m_device_index_right_hand)
+      {
         app_ptr = &m_rh_window;
+        current_window_needs_update = rh_window_needs_update;
+      }
 
       if (app_ptr && app_ptr->m_enabled && app_ptr->m_hwnd)
       {
         RhinoVrAppWindow& app = *app_ptr;
 
-        RECT gh_window_dim;
-        if (GetClientRect(app.m_hwnd, (LPRECT)&gh_window_dim))
+        if (current_window_needs_update)
         {
-          LONG x = gh_window_dim.left;
-          LONG y = gh_window_dim.top;
-          LONG width = gh_window_dim.right - x;
-          LONG height = gh_window_dim.bottom - y;
-
-          HDC app_hdc = GetDC(app.m_hwnd);
-
-          if (app.m_bitmap == nullptr || app.m_width != width || app.m_height != height)
+          RECT window_dim;
+          if (GetClientRect(app.m_hwnd, (LPRECT)&window_dim))
           {
-            if (app.m_bitmap)
+            LONG width = window_dim.right - window_dim.left;
+            LONG height = window_dim.bottom - window_dim.top;
+
+            HDC app_hdc = GetDC(app.m_hwnd);
+
+            if (app.m_dib.Width() != width || app.m_dib.Height() != height)
             {
-              DeleteObject(app.m_bitmap);
+              app.m_dib.ReuseDib(width, height, 32, true);
+            }
+            else
+            {
+              app.m_dib.DCSelectBitmap(true);
             }
 
-            app.m_bitmap = CreateCompatibleBitmap(app_hdc, width, height);
-
-            if (app.m_bitmap_hdc)
+            if (BitBlt(app.m_dib, 0, 0, width, height, app_hdc, 0, 0, SRCCOPY))
             {
-              DeleteObject(app.m_bitmap_hdc);
-              app.m_bitmap_hdc = nullptr;
-            }
-          }
+              ON_FileReference file_ref = app.m_dib.GetTextureFileReference(app.m_crc);
 
-          if (app.m_bitmap_hdc == nullptr)
-          {
-            app.m_bitmap_hdc = CreateCompatibleDC(app_hdc);
-          }
+              ON_Texture tex;
+              tex.m_mode = ON_Texture::MODE::decal_texture;
+              tex.m_type = ON_Texture::TYPE::bitmap_texture;
+              tex.m_minfilter = tex.m_magfilter = ON_Texture::FILTER::nearest_filter;
+              tex.m_image_file_reference = file_ref;
 
-          if (app.m_bitmap && app.m_bitmap_hdc)
-          {
-            if (SelectObject(app.m_bitmap_hdc, app.m_bitmap))
-            {
-              if (BitBlt(app.m_bitmap_hdc, 0, 0, width, height, app_hdc, 0, 0, SRCCOPY))
-              {
-                CRhinoDib gh_dib(app.m_bitmap);
+              ON_Material mat;
+              mat.AddTexture(tex);
 
-                ON_FileReference file_ref = gh_dib.GetTextureFileReference(app.m_crc);
+              app.m_material = mat;
 
-                ON_Texture tex;
-                tex.m_mode = ON_Texture::MODE::decal_texture;
-                tex.m_type = ON_Texture::TYPE::bitmap_texture;
-                tex.m_minfilter = tex.m_magfilter = ON_Texture::FILTER::linear_filter;
-                tex.m_image_file_reference = file_ref;
-
-                ON_Material mat;
-                mat.AddTexture(tex);
-
-                app.m_material = mat;
-
-                double aspect = double(width) / height;
-
-                ddc.AddPlane(app.m_plane, 0.25*aspect, 0.25, &app.m_material);
-              }
+              double aspect = double(width) / height;
+              app.m_plane_width = 0.25*aspect;
+              app.m_plane_height = 0.25;
             }
           }
         }
+
+        ddc.AddPlane(app.m_plane, app.m_plane_width, app.m_plane_height, &app.m_material);
       }
     }
 
