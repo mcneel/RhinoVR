@@ -14,9 +14,10 @@ public:
   void SetDeviceMeshCacheHandle(CRhinoCacheHandle* cache_handle);
 
   void SetFrustumNearFarSuggestion(double frus_near, double frus_far);
-  void AddPlane(const ON_Plane& plane, double extent_x, double extent_y, const CDisplayPipelineMaterial* material);
+  void AddWindowMesh(const ON_Mesh& mesh, const CDisplayPipelineMaterial* material);
   void AddLine(const ON_3dPoint& from, const ON_3dPoint& to, const ON_Color& color);
   void Empty();
+  void InvalidateWindowMeshCache();
 
 private:
   double m_frus_near_suggestion;
@@ -26,8 +27,8 @@ private:
   ON_SimpleArray<ON_3dPoint> m_end_pts;
   ON_SimpleArray<ON_Color> m_colors;
 
-  ON_SimpleArray<ON_Plane> m_planes;
-  ON_ClassArray<ON_Mesh> m_mesh_planes;
+  ON_ClassArray<ON_Mesh> m_plane_meshes;
+  ON_ClassArray<ON_Xform> m_plane_xforms;
   ON_SimpleArray<const CDisplayPipelineMaterial*> m_plane_materials;
   ON_SimpleArray<CRhinoCacheHandle*> m_mesh_plane_cache_handles;
 

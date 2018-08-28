@@ -93,14 +93,43 @@ HWND FindApplicationWindow(const wchar_t* app_title_string)
   return nullptr;
 }
 
+ON_Mesh CreateAppWindowMesh(double extent_x, double extent_y)
+{
+  ON_Mesh mesh;
+
+  mesh.m_V.Append(ON_3fPoint(-0.5f, -0.5f, 0.0f));
+  mesh.m_V.Append(ON_3fPoint(0.5f, -0.5f, 0.0f));
+  mesh.m_V.Append(ON_3fPoint(0.5f, 0.5f, 0.0f));
+  mesh.m_V.Append(ON_3fPoint(-0.5f, 0.5f, 0.0f));
+
+  mesh.m_T.Append(ON_2fPoint(0.0f, 1.0f));
+  mesh.m_T.Append(ON_2fPoint(1.0f, 1.0f));
+  mesh.m_T.Append(ON_2fPoint(1.0f, 0.0f));
+  mesh.m_T.Append(ON_2fPoint(0.0f, 0.0f));
+
+  ON_MeshFace& face = mesh.m_F.AppendNew();
+  face.vi[0] = 0;
+  face.vi[1] = 1;
+  face.vi[2] = 2;
+  face.vi[3] = 3;
+
+  ON_Xform scale = ON_Xform::DiagonalTransformation(extent_x, extent_y, 1.0);
+
+  ON_Xform rotation;
+  rotation.Rotation(45.0*ON_DEGREES_TO_RADIANS, ON_3dVector::XAxis, ON_3dPoint::Origin);
+
+  mesh.Transform(rotation * scale);
+
+  return mesh;
+}
+
 void InitializeAppWindow(RhinoVrAppWindow& app, const ON_wString& app_title)
 {
-  app.m_enabled = true;
+  app.m_enabled = false;
   app.m_title = app_title;
   app.m_crc   = app_title.DataCRC(0);
   app.m_hwnd  = FindApplicationWindow(app_title);
-  app.m_plane = ON_Plane::World_xy;
-  app.m_plane.Rotate(45.0*ON_DEGREES_TO_RADIANS, ON_3dVector::XAxis);
+  app.m_mesh = CreateAppWindowMesh(1.0, 1.0);
 }
 
 bool RhinoVrRenderer::Initialize()
@@ -232,7 +261,7 @@ bool RhinoVrRenderer::Initialize()
   }
 
   InitializeAppWindow(m_gh_window, L"Grasshopper");
-  InitializeAppWindow(m_rh_window, L"Rhinoceros 6");
+  //InitializeAppWindow(m_rh_window, L"Rhinoceros 6");
 
   m_last_window_update = RhinoGetTimestamp();
 
@@ -444,12 +473,22 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
   {
     m_last_window_update = now;
 
-    if (last_window_updated == 0)
+    if (m_rh_window.m_hwnd && m_rh_window.m_enabled && last_window_updated == 0)
     {
       rh_window_needs_update = true;
       last_window_updated = 1;
     }
-    else
+    else if (m_gh_window.m_hwnd && m_gh_window.m_enabled && last_window_updated == 1)
+    {
+      gh_window_needs_update = true;
+      last_window_updated = 0;
+    }
+    else if (m_rh_window.m_hwnd && m_rh_window.m_enabled)
+    {
+      rh_window_needs_update = true;
+      last_window_updated = 1;
+    }
+    else if (m_gh_window.m_hwnd && m_gh_window.m_enabled)
     {
       gh_window_needs_update = true;
       last_window_updated = 0;
@@ -479,7 +518,7 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
 
     if (is_controller)
     {
-      ddc.AddLine(m_pointer_line.from, m_pointer_line.to, ON_Color::SaturatedGreen);
+      bool draw_pointer = true;
 
       RhinoVrAppWindow* app_ptr = nullptr;
       bool current_window_needs_update = false;
@@ -507,6 +546,19 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
             LONG width = window_dim.right - window_dim.left;
             LONG height = window_dim.bottom - window_dim.top;
 
+            if (app.m_width != width || app.m_height != height)
+            {
+              double aspect = double(width) / height;
+              app.m_mesh_width = 0.40*aspect;
+              app.m_mesh_height = 0.40;
+              app.m_mesh = CreateAppWindowMesh(app.m_mesh_width, app.m_mesh_height);
+
+              ddc.InvalidateWindowMeshCache();
+            }
+
+            app.m_width = width;
+            app.m_height = height;
+
             HDC app_hdc = GetDC(app.m_hwnd);
 
             if (app.m_dib.Width() != width || app.m_dib.Height() != height)
@@ -532,16 +584,25 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
               mat.AddTexture(tex);
 
               app.m_material = mat;
-
-              double aspect = double(width) / height;
-              app.m_plane_width = 0.25*aspect;
-              app.m_plane_height = 0.25;
             }
           }
         }
 
-        ddc.AddPlane(app.m_plane, app.m_plane_width, app.m_plane_height, &app.m_material);
+        double opacity = app.m_opacity;
+        if (opacity >= 0.99)
+          opacity = 1.0;
+
+        if (opacity > 0.001)
+        {
+          draw_pointer = false;
+        }
+
+        app.m_material.m_FrontMaterial.m_transparency = (1.0 - opacity);
+        ddc.AddWindowMesh(app.m_mesh, &app.m_material);
       }
+
+      if(draw_pointer)
+        ddc.AddLine(m_pointer_line.from, m_pointer_line.to, ON_Color::SaturatedGreen);
     }
 
     const ON_Mesh& device_mesh = device_model->m_device_mesh;
@@ -934,7 +995,7 @@ void RhinoVrRenderer::GetRhinoVrControllerState(
 
   {
     float value   = state.rAxis[1].x;
-    bool was_down = controller.m_grip_button_down;
+    bool was_down = controller.m_trigger_button_down;
     bool is_down  = (value == 1.0f);
 
     controller.m_trigger_button_down     = is_down;
@@ -1050,6 +1111,43 @@ int SortObjRefBySelDist(const CRhinoObjRef* a, const CRhinoObjRef* b)
   return 0;
 }
 
+bool RhinoVrRenderer::RhinoVrGetIntersectingAppWindow(const RhinoVrAppWindow& app_window, const ON_Xform& ray_xform, const ON_Xform& window_mesh_xform, ON_3dPoint& world_point, ON_2dPoint& screen_uvs)
+{
+  ON_Line pointer_line = m_pointer_line;
+  pointer_line.Transform(window_mesh_xform.Inverse() * ray_xform);
+
+  const ON_Mesh& mesh = app_window.m_mesh;
+
+  const ON_MeshTree* mesh_tree = mesh.MeshTree(true);
+  if (mesh_tree)
+  {
+    ON_SimpleArray<ON_CMX_EVENT> isects;
+    if (mesh_tree->IntersectLine(pointer_line, isects) > 0)
+    {
+      ON_CMX_EVENT& isect = isects[0];
+      if (isect.m_type == ON_CMX_EVENT::cmx_point)
+      {
+        ON_MESH_POINT& pt = isect.m_M[0];
+        if (pt.m_ci.m_type == ON_COMPONENT_INDEX::mesh_face)
+        {
+          ON_2dPoint uv = 
+            mesh.m_T[0] * pt.m_t[0] +
+            mesh.m_T[1] * pt.m_t[1] +
+            mesh.m_T[2] * pt.m_t[2] +
+            mesh.m_T[3] * pt.m_t[3];
+
+          world_point = pt.m_P;
+          screen_uvs = uv;
+
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 bool RhinoVrRenderer::RhinoVrGetIntersectingObject(const ON_Xform& picking_device_xform, const CRhinoObject*& isect_object, ON_3dPoint& isect_point)
 {
   ON_Viewport line_vp;
@@ -1087,6 +1185,83 @@ bool RhinoVrRenderer::RhinoVrGetIntersectingObject(const ON_Xform& picking_devic
   return false;
 }
 
+POINT ScreenUvToPt(ON_2dPoint screen_uv, LONG width, LONG height)
+{
+  POINT client_pt;
+  client_pt.x = (LONG)floor(screen_uv.x*width);
+  client_pt.y = (LONG)floor((1.0 - screen_uv.y)*height);
+
+  return client_pt;
+}
+
+bool RhinoVrWindowMouseButtonEvent(HWND hwnd, POINT client_pt, DWORD button_event)
+{
+  bool rc = false;
+
+  POINT screen_pt = client_pt;
+  if (ClientToScreen(hwnd, &screen_pt))
+  {
+    if (SetCursorPos((int)screen_pt.x, (int)screen_pt.y))
+    {
+      INPUT input;
+      input.type = INPUT_MOUSE;
+      input.mi.dwFlags = button_event;
+      if (SendInput(1, &input, sizeof(INPUT)) > 0)
+      {
+        rc = true;
+      }
+    }
+  }
+
+  return rc;
+}
+
+bool RhinoVrWindowMouseLeftBtnDown(HWND hwnd, POINT client_pt)
+{
+  return RhinoVrWindowMouseButtonEvent(hwnd, client_pt, MOUSEEVENTF_LEFTDOWN);
+}
+
+bool RhinoVrWindowMouseLeftBtnUp(HWND hwnd, POINT client_pt)
+{
+  return RhinoVrWindowMouseButtonEvent(hwnd, client_pt, MOUSEEVENTF_LEFTUP);
+}
+
+bool RhinoVrWindowMouseLeftClick(HWND hwnd, POINT client_pt)
+{
+  bool rc = false;
+
+  if (RhinoVrWindowMouseLeftBtnDown(hwnd, client_pt) && RhinoVrWindowMouseLeftBtnUp(hwnd, client_pt))
+  {
+    rc = true;
+  }
+
+  return rc;
+}
+
+bool RhinoVrWindowMouseMove(HWND hwnd, POINT client_pt)
+{
+  static int screen_width = GetSystemMetrics(SM_CXSCREEN);
+  static int screen_height = GetSystemMetrics(SM_CYSCREEN);
+
+  bool rc = false;
+
+  POINT screen_pt = client_pt;
+  if (ClientToScreen(hwnd, &screen_pt))
+  {
+    INPUT input;
+    input.type = INPUT_MOUSE;
+    input.mi.dx = (LONG)((double(screen_pt.x) / screen_width) * 0xFFFF);
+    input.mi.dy = (LONG)((double(screen_pt.y) / screen_height) * 0xFFFF);
+    input.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+    if (SendInput(1, &input, sizeof(INPUT)) > 0)
+    {
+      rc = true;
+    }
+  }
+
+  return rc;
+}
+
 bool RhinoVrRenderer::HandleInput()
 {
   if (m_hmd == nullptr || m_doc == nullptr || m_view == nullptr)
@@ -1106,14 +1281,47 @@ bool RhinoVrRenderer::HandleInput()
     RhinoVrDeviceData& device_data = m_device_data[device_idx];
     RhinoVrDeviceController& controller = device_data.m_controller;
 
+    bool is_left_hand = (device_idx == m_device_index_left_hand);
+    bool is_right_hand = (device_idx == m_device_index_right_hand);
+
+    HWND window = nullptr;
+    POINT window_pt;
+
+    if(m_device_index_left_hand < vr::k_unMaxTrackedDeviceCount &&
+      m_device_index_right_hand < vr::k_unMaxTrackedDeviceCount)
+    {
+      const ON_Xform& left_hand_xform = m_device_data[m_device_index_left_hand].m_xform;
+      const ON_Xform& right_hand_xform = m_device_data[m_device_index_right_hand].m_xform;
+
+      ON_3dPoint isect_point = ON_3dPoint::UnsetPoint;
+      ON_2dPoint window_uv = ON_2dPoint::UnsetPoint;
+
+      if (is_left_hand &&
+        RhinoVrGetIntersectingAppWindow(m_rh_window, left_hand_xform, right_hand_xform, isect_point, window_uv))
+      {
+        window = m_rh_window.m_hwnd;
+        window_pt = ScreenUvToPt(window_uv, m_rh_window.m_width, m_rh_window.m_height);
+      }
+
+      else if (is_right_hand &&
+        RhinoVrGetIntersectingAppWindow(m_gh_window, right_hand_xform, left_hand_xform, isect_point, window_uv))
+        {
+          window = m_gh_window.m_hwnd;
+          window_pt = ScreenUvToPt(window_uv, m_gh_window.m_width, m_gh_window.m_height);
+        }
+    }
+
     if (controller.m_touchpad_button_pressed)
     {
       if (m_doc->InGetPoint())
       {
         RhinoVrGetPoint(device_data.m_xform);
       }
-      else
+      else if (window)
       {
+        RhinoVrWindowMouseLeftBtnDown(window, window_pt);
+      }
+      else {
         const CRhinoObject* isect_object = nullptr;
         ON_3dPoint isect_point = ON_3dPoint::UnsetPoint;
 
@@ -1133,6 +1341,20 @@ bool RhinoVrRenderer::HandleInput()
             isect_object->Select();
           }
         }
+      }
+    }
+    else if (controller.m_touchpad_button_released)
+    {
+      if (window)
+      {
+        RhinoVrWindowMouseLeftBtnUp(window, window_pt);
+      }
+    }
+    else if (controller.m_touchpad_button_down)
+    {
+      if (window)
+      {
+        RhinoVrWindowMouseMove(window, window_pt);
       }
     }
     else if (controller.m_appmenu_button_pressed)
@@ -1155,18 +1377,50 @@ bool RhinoVrRenderer::HandleInput()
     }
     else if (controller.m_trigger_button_pressed || controller.m_a_button_pressed)
     {
-      RhinoApp().ExecuteCommand(m_doc_sn, L"_Enter");
+      if (is_right_hand)
+      {
+        RhinoApp().ExecuteCommand(m_doc_sn, L"_Enter");
 
-      // Need to re-attach since ExecuteCommand pumps messages
-      // and can basically do anything, including e.g. deleting views.
-      if (!AttachDocAndView())
-        return false;
+        // Need to re-attach since ExecuteCommand pumps messages
+        // and can basically do anything, including e.g. deleting views.
+        if (!AttachDocAndView())
+          return false;
+      }
+    }
+    else if (controller.m_trigger_button_released)
+    {
+      if (is_left_hand)
+      {
+        m_gh_window.m_enabled = false;
+      }
     }
     else
     {
       if (m_doc->InGetPoint())
       {
         RhinoVrOnMouseMove(device_data.m_xform);
+      }
+      else if (window)
+      {
+        RhinoVrWindowMouseMove(window, window_pt);
+      }
+    }
+
+    if (is_left_hand)
+    {
+      if (controller.m_trigger_button_value > 0.001)
+      {
+        if (m_gh_window.m_hwnd == nullptr)
+        {
+          InitializeAppWindow(m_gh_window, L"Grasshopper");
+        }
+        m_gh_window.m_enabled = true;
+        m_gh_window.m_opacity = controller.m_trigger_button_value;
+      }
+      else
+      {
+        m_gh_window.m_enabled = false;
+        m_gh_window.m_opacity = 1.0;
       }
     }
   }

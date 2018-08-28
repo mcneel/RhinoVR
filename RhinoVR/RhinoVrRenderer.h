@@ -61,9 +61,10 @@ struct RhinoVrAppWindow
   CRhinoDib  m_dib;
   LONG       m_width = 0;
   LONG       m_height = 0;
-  ON_Plane   m_plane;
-  double     m_plane_width = 0.0;
-  double     m_plane_height = 0.0;
+  ON_Mesh    m_mesh;
+  double     m_mesh_width = 0.0;
+  double     m_mesh_height = 0.0;
+  double     m_opacity = 1.0;
   CDisplayPipelineMaterial m_material;
 };
 
@@ -143,6 +144,8 @@ protected:
 
   // Simulate Rhino's OnMouseMove in VR.
   void RhinoVrOnMouseMove(const ON_Xform& picking_device_xform);
+
+  bool RhinoVrGetIntersectingAppWindow(const RhinoVrAppWindow& app_window, const ON_Xform& ray_xform, const ON_Xform& window_mesh_xform, ON_3dPoint& world_point, ON_2dPoint& screen_uvs);
 
   // Find object intersection with an eye-space ray transformed by 'picking_device_xform'.
   // The eye-space ray is (0.0, 0.0, -frustum_near) to (0.0, 0.0, -frustum_far).
