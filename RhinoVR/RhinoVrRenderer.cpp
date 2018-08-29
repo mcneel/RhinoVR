@@ -572,7 +572,7 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
 
             if (BitBlt(app.m_dib, 0, 0, width, height, app_hdc, 0, 0, SRCCOPY))
             {
-              ON_FileReference file_ref = app.m_dib.GetTextureFileReference(app.m_crc);
+              ON_FileReference file_ref = RhinoGetDibAsTextureFileReference(app.m_dib, app.m_crc);
 
               ON_Texture tex;
               tex.m_mode = ON_Texture::MODE::decal_texture;
@@ -1285,7 +1285,7 @@ bool RhinoVrRenderer::HandleInput()
     bool is_right_hand = (device_idx == m_device_index_right_hand);
 
     HWND window = nullptr;
-    POINT window_pt;
+    POINT window_pt = {};
 
     if(m_device_index_left_hand < vr::k_unMaxTrackedDeviceCount &&
       m_device_index_right_hand < vr::k_unMaxTrackedDeviceCount)
