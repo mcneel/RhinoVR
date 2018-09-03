@@ -275,8 +275,14 @@ protected:
   // The render models of all tracked devices.
   ON_ClassArray<std::unique_ptr<RhinoVrDeviceModel>> m_device_render_models;
 
+  RhinoVrFrustumConduit m_frustum_conduit;
+
   RhinoVrAppWindow m_gh_window;
   RhinoVrAppWindow m_rh_window;
+
+  bool m_gh_window_left_btn_down;
+  bool m_gh_window_zoomed_this_frame;
+  bool m_gh_window_panned_this_frame;
 
   RhTimestamp m_last_window_update;
 

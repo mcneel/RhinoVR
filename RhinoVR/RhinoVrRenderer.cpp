@@ -34,6 +34,9 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   , m_fps_time_start(0)
   , m_frame_counter(0)
   , m_last_window_update(0)
+  , m_gh_window_left_btn_down(false)
+  , m_gh_window_zoomed_this_frame(false)
+  , m_gh_window_panned_this_frame(false)
 {
   memset(m_device_poses, 0, sizeof(m_device_poses));
   
@@ -93,14 +96,14 @@ HWND FindApplicationWindow(const wchar_t* app_title_string)
   return nullptr;
 }
 
-ON_Mesh CreateAppWindowMesh(double extent_x, double extent_y)
+ON_Mesh CreateAppWindowMesh(double extent_x, double extent_y, double extent_z)
 {
   ON_Mesh mesh;
 
-  mesh.m_V.Append(ON_3fPoint(-0.5f, -0.5f, 0.0f));
-  mesh.m_V.Append(ON_3fPoint(0.5f, -0.5f, 0.0f));
-  mesh.m_V.Append(ON_3fPoint(0.5f, 0.5f, 0.0f));
-  mesh.m_V.Append(ON_3fPoint(-0.5f, 0.5f, 0.0f));
+  mesh.m_V.Append(ON_3fPoint(-0.5f, -0.5f, -0.05f));
+  mesh.m_V.Append(ON_3fPoint(0.5f, -0.5f, -0.05f));
+  mesh.m_V.Append(ON_3fPoint(0.5f, 0.5f, -0.05f));
+  mesh.m_V.Append(ON_3fPoint(-0.5f, 0.5f, -0.05f));
 
   mesh.m_T.Append(ON_2fPoint(0.0f, 1.0f));
   mesh.m_T.Append(ON_2fPoint(1.0f, 1.0f));
@@ -113,10 +116,10 @@ ON_Mesh CreateAppWindowMesh(double extent_x, double extent_y)
   face.vi[2] = 2;
   face.vi[3] = 3;
 
-  ON_Xform scale = ON_Xform::DiagonalTransformation(extent_x, extent_y, 1.0);
+  ON_Xform scale = ON_Xform::DiagonalTransformation(extent_x, extent_y, extent_z);
 
   ON_Xform rotation;
-  rotation.Rotation(45.0*ON_DEGREES_TO_RADIANS, ON_3dVector::XAxis, ON_3dPoint::Origin);
+  rotation.Rotation(90.0*ON_DEGREES_TO_RADIANS, ON_3dVector::XAxis, ON_3dPoint::Origin);
 
   mesh.Transform(rotation * scale);
 
@@ -129,7 +132,7 @@ void InitializeAppWindow(RhinoVrAppWindow& app, const ON_wString& app_title)
   app.m_title = app_title;
   app.m_crc   = app_title.DataCRC(0);
   app.m_hwnd  = FindApplicationWindow(app_title);
-  app.m_mesh = CreateAppWindowMesh(1.0, 1.0);
+  app.m_mesh = CreateAppWindowMesh(1.0, 1.0, 1.0);
 }
 
 bool RhinoVrRenderer::Initialize()
@@ -170,7 +173,7 @@ bool RhinoVrRenderer::Initialize()
     return false;
   
   m_unit_scale = rhino_doc->ModelUnits().MetersPerUnit();
-  m_pointer_line = ON_Line(m_unit_scale*ON_3dPoint(0, 0, -0.02), m_unit_scale*ON_3dPoint(0, 0, -500.0));
+  m_pointer_line = ON_Line(m_unit_scale*ON_3dPoint(0, 0, -0.02), m_unit_scale*ON_3dPoint(0, 0, -250.0));
 
   SetupRenderModels();
 
@@ -179,8 +182,8 @@ bool RhinoVrRenderer::Initialize()
 
   // For now, let's force the resolution to be the same as the native
   // screen resolution of both the Vive and the Oculus.
-  rec_width = 1080;
-  rec_height = 1200;
+  //rec_width = 1080;
+  //rec_height = 1200;
 
   CRhinoView* view = CRhinoView::FromRuntimeSerialNumber(m_view_sn);
   if (view == nullptr)
@@ -259,6 +262,18 @@ bool RhinoVrRenderer::Initialize()
     view->ActiveViewport().SetVP(vp, TRUE);
     view->Redraw();
   }
+
+  m_frustum_conduit.SetFrustumLeft(
+    m_near_clip, m_far_clip,
+    m_left_frus_left, m_left_frus_right,
+    m_left_frus_top, m_left_frus_bottom);
+
+  m_frustum_conduit.SetFrustumRight(
+    m_near_clip, m_far_clip,
+    m_right_frus_left, m_right_frus_right,
+    m_right_frus_top, m_right_frus_bottom);
+
+  m_frustum_conduit.Enable(m_doc_sn);
 
   InitializeAppWindow(m_gh_window, L"Grasshopper");
   //InitializeAppWindow(m_rh_window, L"Rhinoceros 6");
@@ -549,9 +564,9 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
             if (app.m_width != width || app.m_height != height)
             {
               double aspect = double(width) / height;
-              app.m_mesh_width = 0.40*aspect;
-              app.m_mesh_height = 0.40;
-              app.m_mesh = CreateAppWindowMesh(app.m_mesh_width, app.m_mesh_height);
+              app.m_mesh_width = 0.50*m_unit_scale*aspect;
+              app.m_mesh_height = 0.50*m_unit_scale;
+              app.m_mesh = CreateAppWindowMesh(app.m_mesh_width, app.m_mesh_height, m_unit_scale);
 
               ddc.InvalidateWindowMeshCache();
             }
@@ -617,7 +632,6 @@ void RhinoVrRenderer::UpdateDeviceDisplayConduits(
 
     if (!ddc.IsEnabled())
     {
-      ddc.SetFrustumNearFarSuggestion(m_near_clip, m_far_clip);
       ddc.Enable(m_doc_sn);
     }
   }
@@ -655,58 +669,50 @@ bool RhinoVrRenderer::UpdateState()
     return false;
   }
 
-  for (vr::TrackedDeviceIndex_t device_idx = 0; device_idx < vr::k_unMaxTrackedDeviceCount; device_idx++)
-  {
-    if (m_hmd->GetTrackedDeviceClass(device_idx) != vr::TrackedDeviceClass_Controller)
-      continue;
-
-    vr::VRControllerState_t state;
-    if (m_hmd->GetControllerState(device_idx, &state, sizeof(state)))
-    {
-      RhinoVrDeviceController& controller = m_device_data[device_idx].m_controller;
-      GetRhinoVrControllerState(state, controller);
-    }
-  }
-
-  m_device_index_left_hand = m_hmd->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_LeftHand);
-  m_device_index_right_hand = m_hmd->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_RightHand);
-
   ON_2dVector camera_translation_vector = ON_2dVector::ZeroVector;
   double camera_horizontal_rotation = 0.0;
   double camera_translation_updown = 0.0;
 
   if (!m_doc->InCommand())
   {
-    // If both X and Y magnitudes are under 0.6 then we don't move/rotate.
-    // In other words, the touchpad needs to be touched close to the edge.
-    const double threshold = 0.4;
-
-    if(m_device_index_left_hand >= 0 && m_device_index_left_hand < vr::k_unMaxTrackedDeviceCount)
+    if (!m_gh_window_left_btn_down &&
+        !m_gh_window_zoomed_this_frame &&
+        !m_gh_window_panned_this_frame)
     {
-      RhinoVrDeviceController& controller = m_device_data[m_device_index_left_hand].m_controller;
-      ON_2dVector analog_vec = controller.m_touchpad_touch_point;
 
-      if (analog_vec.Length() >= threshold)
+      // If both X and Y magnitudes are under 0.4 then we don't move/rotate.
+      // In other words, the touchpad needs to be touched close to the edge.
+      const double threshold = 0.4;
+
+      if (m_device_index_left_hand >= 0 && m_device_index_left_hand < vr::k_unMaxTrackedDeviceCount)
       {
-        ON_2dVector offset_vec = -threshold * analog_vec.UnitVector();
-        ON_2dVector translate_vec = analog_vec + offset_vec;
+        RhinoVrDeviceController& controller = m_device_data[m_device_index_left_hand].m_controller;
 
-        camera_translation_vector = 0.25*m_unit_scale*translate_vec;
+        ON_2dVector analog_vec = controller.m_touchpad_touch_point;
+
+        if (analog_vec.Length() >= threshold)
+        {
+          ON_2dVector offset_vec = -threshold * analog_vec.UnitVector();
+          ON_2dVector translate_vec = analog_vec + offset_vec;
+
+          camera_translation_vector = 0.25*m_unit_scale*translate_vec;
+        }
       }
-    }
 
-    if (m_device_index_right_hand >= 0 && m_device_index_right_hand < vr::k_unMaxTrackedDeviceCount)
-    {
-      RhinoVrDeviceController& controller = m_device_data[m_device_index_right_hand].m_controller;
-      ON_2dVector analog_vec = controller.m_touchpad_touch_point;
-
-      if (analog_vec.Length() >= threshold)
+      if (m_device_index_right_hand >= 0 && m_device_index_right_hand < vr::k_unMaxTrackedDeviceCount)
       {
-        ON_2dVector offset_vec = -threshold * analog_vec.UnitVector();
-        ON_2dVector rotation_angles = analog_vec + offset_vec;
+        RhinoVrDeviceController& controller = m_device_data[m_device_index_right_hand].m_controller;
 
-        camera_horizontal_rotation = -4.0*ON_DEGREES_TO_RADIANS*rotation_angles.x;
-        camera_translation_updown = 0.15*m_unit_scale*rotation_angles.y;
+        ON_2dVector analog_vec = controller.m_touchpad_touch_point;
+
+        if (analog_vec.Length() >= threshold)
+        {
+          ON_2dVector offset_vec = -threshold * analog_vec.UnitVector();
+          ON_2dVector rotation_angles = analog_vec + offset_vec;
+
+          camera_horizontal_rotation = -4.0*ON_DEGREES_TO_RADIANS*rotation_angles.x;
+          camera_translation_updown = 0.15*m_unit_scale*rotation_angles.y;
+        }
       }
     }
   }
@@ -1226,6 +1232,16 @@ bool RhinoVrWindowMouseLeftBtnUp(HWND hwnd, POINT client_pt)
   return RhinoVrWindowMouseButtonEvent(hwnd, client_pt, MOUSEEVENTF_LEFTUP);
 }
 
+bool RhinoVrWindowMouseRightBtnDown(HWND hwnd, POINT client_pt)
+{
+  return RhinoVrWindowMouseButtonEvent(hwnd, client_pt, MOUSEEVENTF_RIGHTDOWN);
+}
+
+bool RhinoVrWindowMouseRightBtnUp(HWND hwnd, POINT client_pt)
+{
+  return RhinoVrWindowMouseButtonEvent(hwnd, client_pt, MOUSEEVENTF_RIGHTUP);
+}
+
 bool RhinoVrWindowMouseLeftClick(HWND hwnd, POINT client_pt)
 {
   bool rc = false;
@@ -1262,10 +1278,132 @@ bool RhinoVrWindowMouseMove(HWND hwnd, POINT client_pt)
   return rc;
 }
 
+bool RhinoVrWindowMouseScroll(HWND hwnd, POINT client_pt, double x, double y)
+{
+  bool rc = false;
+
+  POINT screen_pt = client_pt;
+  if (ClientToScreen(hwnd, &screen_pt))
+  {
+    if (SetCursorPos((int)screen_pt.x, (int)screen_pt.y))
+    {
+      if (x != 0.0)
+      {
+        INPUT input;
+        input.type = INPUT_MOUSE;
+        input.mi.dwFlags = MOUSEEVENTF_HWHEEL;
+        input.mi.mouseData = (DWORD)(WHEEL_DELTA * x);
+        if (SendInput(1, &input, sizeof(INPUT)) > 0)
+        {
+          rc = true;
+        }
+      }
+
+      if (y != 0.0)
+      {
+        INPUT input;
+        input.type = INPUT_MOUSE;
+        input.mi.dwFlags = MOUSEEVENTF_WHEEL;
+        input.mi.mouseData = (DWORD)(WHEEL_DELTA * y);
+        if (SendInput(1, &input, sizeof(INPUT)) > 0)
+        {
+          rc = true;
+        }
+      }
+    }
+  }
+
+  return rc;
+}
+
 bool RhinoVrRenderer::HandleInput()
 {
+  m_gh_window_zoomed_this_frame = false;
+  m_gh_window_panned_this_frame = false;
+
   if (m_hmd == nullptr || m_doc == nullptr || m_view == nullptr)
     return false;
+
+  for (vr::TrackedDeviceIndex_t device_idx = 0; device_idx < vr::k_unMaxTrackedDeviceCount; device_idx++)
+  {
+    if (m_hmd->GetTrackedDeviceClass(device_idx) != vr::TrackedDeviceClass_Controller)
+      continue;
+
+    vr::VRControllerState_t state;
+    if (m_hmd->GetControllerState(device_idx, &state, sizeof(state)))
+    {
+      RhinoVrDeviceController& controller = m_device_data[device_idx].m_controller;
+      GetRhinoVrControllerState(state, controller);
+    }
+  }
+
+  /*
+  static bool scale_changed = false;
+
+  bool key_pressed_ctrl = (GetKeyState(VK_CONTROL) & 0x8000);
+  bool key_pressed_1 = (GetKeyState('1') & 0x8000);
+  bool key_pressed_2 = (GetKeyState('2') & 0x8000);
+
+  if (key_pressed_ctrl && !scale_changed)
+  {
+    double scale = 1.0;
+    if (key_pressed_1)
+    {
+      scale = 10.0;
+    }
+    else if (key_pressed_2)
+    {
+      scale = 0.1;
+    }
+
+    if (scale != 1.0)
+    {
+      scale_changed = true;
+
+      //m_near_clip = m_near_clip * (float)scale;
+      //m_far_clip = (float)(m_near_clip / m_vp_orig.PerspectiveMinNearOverFar());
+      //m_hmd->GetProjectionRaw(vr::Eye_Left,
+      //  &m_left_frus_left, &m_left_frus_right, &m_left_frus_top, &m_left_frus_bottom);
+
+      m_left_frus_left *= scale;
+      m_left_frus_right *= scale;
+      m_left_frus_top *= scale;
+      m_left_frus_bottom *= scale;
+
+      //m_hmd->GetProjectionRaw(vr::Eye_Right,
+      //  &m_right_frus_left, &m_right_frus_right, &m_right_frus_top, &m_right_frus_bottom);
+
+      m_right_frus_left *= scale;
+      m_right_frus_right *= scale;
+      m_right_frus_top *= scale;
+      m_right_frus_bottom *= scale;
+
+      m_frustum_conduit.SetFrustumLeft(
+        m_near_clip, m_far_clip,
+        m_left_frus_left, m_left_frus_right,
+        m_left_frus_top, m_left_frus_bottom);
+
+      m_frustum_conduit.SetFrustumRight(
+        m_near_clip, m_far_clip,
+        m_right_frus_left, m_right_frus_right,
+        m_right_frus_top, m_right_frus_bottom);
+
+      m_vp_orig_hmd_frus.SetFrustum(
+        m_left_frus_left, m_right_frus_right,
+        m_left_frus_top, m_left_frus_bottom,
+        m_near_clip, m_far_clip);
+
+    }
+  }
+
+  if (!key_pressed_1 && !key_pressed_2)
+  {
+    scale_changed = false;
+  }
+  */
+
+  m_device_index_left_hand = m_hmd->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_LeftHand);
+  m_device_index_right_hand = m_hmd->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_RightHand);
 
   vr::VREvent_t event;
   while (m_hmd->PollNextEvent(&event, sizeof(event)))
@@ -1287,8 +1425,9 @@ bool RhinoVrRenderer::HandleInput()
     HWND window = nullptr;
     POINT window_pt = {};
 
-    if(m_device_index_left_hand < vr::k_unMaxTrackedDeviceCount &&
-      m_device_index_right_hand < vr::k_unMaxTrackedDeviceCount)
+    if(m_gh_window.m_enabled &&
+       m_device_index_left_hand < vr::k_unMaxTrackedDeviceCount &&
+       m_device_index_right_hand < vr::k_unMaxTrackedDeviceCount)
     {
       const ON_Xform& left_hand_xform = m_device_data[m_device_index_left_hand].m_xform;
       const ON_Xform& right_hand_xform = m_device_data[m_device_index_right_hand].m_xform;
@@ -1320,6 +1459,7 @@ bool RhinoVrRenderer::HandleInput()
       else if (window)
       {
         RhinoVrWindowMouseLeftBtnDown(window, window_pt);
+        m_gh_window_left_btn_down = true;
       }
       else {
         const CRhinoObject* isect_object = nullptr;
@@ -1392,6 +1532,7 @@ bool RhinoVrRenderer::HandleInput()
       if (is_left_hand)
       {
         m_gh_window.m_enabled = false;
+        m_gh_window_left_btn_down = false;
       }
     }
     else
@@ -1413,6 +1554,19 @@ bool RhinoVrRenderer::HandleInput()
         if (m_gh_window.m_hwnd == nullptr)
         {
           InitializeAppWindow(m_gh_window, L"Grasshopper");
+
+          static bool tried_launching_gh = false;
+
+          if (m_gh_window.m_hwnd == nullptr && !tried_launching_gh)
+          {
+            RhinoApp().ExecuteCommand(m_doc_sn, L"Grasshopper");
+            tried_launching_gh = true;
+
+            // Need to re-attach since ExecuteCommand pumps messages
+            // and can basically do anything, including e.g. deleting views.
+            if (!AttachDocAndView())
+              return false;
+          }
         }
         m_gh_window.m_enabled = true;
         m_gh_window.m_opacity = controller.m_trigger_button_value;
@@ -1421,6 +1575,39 @@ bool RhinoVrRenderer::HandleInput()
       {
         m_gh_window.m_enabled = false;
         m_gh_window.m_opacity = 1.0;
+      }
+    }
+    else if (is_right_hand)
+    {
+      if (window)
+      {
+        if (!m_gh_window_left_btn_down)
+        {
+          const double zoom_threshold = 0.4;
+
+          double vertical_offset = controller.m_touchpad_touch_point.y;
+
+          if (abs(vertical_offset) > zoom_threshold)
+          {
+            double sign = vertical_offset >= 0.0 ? 1.0 : -1.0;
+            double zoom_magnitude = sign * (abs(vertical_offset) - zoom_threshold) / (1.0 - zoom_threshold);
+
+            if (RhinoVrWindowMouseScroll(window, window_pt, 0.0, zoom_magnitude))
+            {
+              m_gh_window_zoomed_this_frame = true;
+            }
+          }
+
+          if (controller.m_trigger_button_pressed)
+          {
+            RhinoVrWindowMouseRightBtnDown(window, window_pt);
+            m_gh_window_panned_this_frame = true;
+          }
+          else if (controller.m_trigger_button_released)
+          {
+            RhinoVrWindowMouseRightBtnUp(window, window_pt);
+          }
+        }
       }
     }
   }
@@ -1442,10 +1629,10 @@ void RhinoVrRenderer::ProcessInputAndRenderFrame()
     VsyncTimingStop();
     FrameTimingStart();
 
-    if (!UpdateState())
+    if (!HandleInput())
       return;
 
-    if (!HandleInput())
+    if (!UpdateState())
       return;
 
     if (!Draw())
