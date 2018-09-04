@@ -52,6 +52,22 @@ struct RhinoVrDeviceController
   ON_2dPoint m_touchpad_touch_point = ON_2dPoint::Origin;
 };
 
+struct RhinoVrAppWindow
+{
+  bool       m_enabled = false;
+  ON_wString m_title;
+  ON__UINT32 m_crc = 0;
+  HWND       m_hwnd = nullptr;
+  CRhinoDib  m_dib;
+  LONG       m_width = 0;
+  LONG       m_height = 0;
+  ON_Mesh    m_mesh;
+  double     m_mesh_width = 0.0;
+  double     m_mesh_height = 0.0;
+  double     m_opacity = 1.0;
+  CDisplayPipelineMaterial m_material;
+};
+
 // This struct contains up-to-date information of a tracked
 // VR device, such as location/orientation, geometry, and
 // the state of any buttons/triggers/touchpads.
@@ -128,6 +144,8 @@ protected:
 
   // Simulate Rhino's OnMouseMove in VR.
   void RhinoVrOnMouseMove(const ON_Xform& picking_device_xform);
+
+  bool RhinoVrGetIntersectingAppWindow(const RhinoVrAppWindow& app_window, const ON_Xform& ray_xform, const ON_Xform& window_mesh_xform, ON_3dPoint& world_point, ON_2dPoint& screen_uvs);
 
   // Find object intersection with an eye-space ray transformed by 'picking_device_xform'.
   // The eye-space ray is (0.0, 0.0, -frustum_near) to (0.0, 0.0, -frustum_far).
@@ -256,6 +274,21 @@ protected:
 
   // The render models of all tracked devices.
   ON_ClassArray<std::unique_ptr<RhinoVrDeviceModel>> m_device_render_models;
+
+  RhinoVrFrustumConduit m_frustum_conduit;
+
+  RhinoVrAppWindow m_gh_window;
+  RhinoVrAppWindow m_rh_window;
+
+  bool m_gh_window_left_btn_down;
+  bool m_window_intersected_this_frame;
+
+  RhTimestamp m_last_window_update;
+
+  double m_move_speed; // Movement speed in meters per second
+  double m_turn_speed; // Turning speed in degrees per second
+  double m_last_frame_time;
+  RhTimestamp m_frame_timestamp;
 
   ON_Mesh m_hidden_mesh_left;  // The hidden area mesh for the left eye.
   ON_Mesh m_hidden_mesh_right; // The hidden area mesh for the right eye.
