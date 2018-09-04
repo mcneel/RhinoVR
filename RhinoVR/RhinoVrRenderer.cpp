@@ -34,9 +34,12 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
   , m_fps_time_start(0)
   , m_frame_counter(0)
   , m_last_window_update(0)
+  , m_move_speed(2.5)
+  , m_turn_speed(90.0)
+  , m_last_frame_time(0)
+  , m_frame_timestamp(0)
   , m_gh_window_left_btn_down(false)
-  , m_gh_window_zoomed_this_frame(false)
-  , m_gh_window_panned_this_frame(false)
+  , m_window_intersected_this_frame(false)
 {
   memset(m_device_poses, 0, sizeof(m_device_poses));
   
@@ -669,6 +672,17 @@ bool RhinoVrRenderer::UpdateState()
     return false;
   }
 
+  if (m_frame_timestamp == 0)
+  {
+    m_frame_timestamp = RhinoGetTimestamp();
+  }
+  else
+  {
+    RhTimestamp now = RhinoGetTimestamp();
+    m_last_frame_time = RhinoGetTimeInSecondsBetween(m_frame_timestamp, now);
+    m_frame_timestamp = now;
+  }
+
   ON_2dVector camera_translation_vector = ON_2dVector::ZeroVector;
   double camera_horizontal_rotation = 0.0;
   double camera_translation_updown = 0.0;
@@ -676,10 +690,8 @@ bool RhinoVrRenderer::UpdateState()
   if (!m_doc->InCommand())
   {
     if (!m_gh_window_left_btn_down &&
-        !m_gh_window_zoomed_this_frame &&
-        !m_gh_window_panned_this_frame)
+        !m_window_intersected_this_frame)
     {
-
       // If both X and Y magnitudes are under 0.4 then we don't move/rotate.
       // In other words, the touchpad needs to be touched close to the edge.
       const double threshold = 0.4;
@@ -695,7 +707,9 @@ bool RhinoVrRenderer::UpdateState()
           ON_2dVector offset_vec = -threshold * analog_vec.UnitVector();
           ON_2dVector translate_vec = analog_vec + offset_vec;
 
-          camera_translation_vector = 0.25*m_unit_scale*translate_vec;
+          double move_distance = m_last_frame_time * m_move_speed;
+
+          camera_translation_vector = move_distance * m_unit_scale*translate_vec;
         }
       }
 
@@ -710,8 +724,11 @@ bool RhinoVrRenderer::UpdateState()
           ON_2dVector offset_vec = -threshold * analog_vec.UnitVector();
           ON_2dVector rotation_angles = analog_vec + offset_vec;
 
-          camera_horizontal_rotation = -4.0*ON_DEGREES_TO_RADIANS*rotation_angles.x;
-          camera_translation_updown = 0.15*m_unit_scale*rotation_angles.y;
+          double turn_distance = m_last_frame_time * m_turn_speed * ON_DEGREES_TO_RADIANS;
+          double move_distance = m_last_frame_time * m_move_speed;
+
+          camera_horizontal_rotation = -turn_distance*rotation_angles.x;
+          camera_translation_updown = move_distance *m_unit_scale*rotation_angles.y;
         }
       }
     }
@@ -1318,8 +1335,7 @@ bool RhinoVrWindowMouseScroll(HWND hwnd, POINT client_pt, double x, double y)
 
 bool RhinoVrRenderer::HandleInput()
 {
-  m_gh_window_zoomed_this_frame = false;
-  m_gh_window_panned_this_frame = false;
+  m_window_intersected_this_frame = false;
 
   if (m_hmd == nullptr || m_doc == nullptr || m_view == nullptr)
     return false;
@@ -1337,7 +1353,6 @@ bool RhinoVrRenderer::HandleInput()
     }
   }
 
-  /*
   static bool scale_changed = false;
 
   bool key_pressed_ctrl = (GetKeyState(VK_CONTROL) & 0x8000);
@@ -1346,53 +1361,21 @@ bool RhinoVrRenderer::HandleInput()
 
   if (key_pressed_ctrl && !scale_changed)
   {
-    double scale = 1.0;
+    float scale = 1.0f;
     if (key_pressed_1)
     {
-      scale = 10.0;
+      scale = 10.0f;
     }
     else if (key_pressed_2)
     {
-      scale = 0.1;
+      scale = 0.1f;
     }
 
-    if (scale != 1.0)
+    if (scale != 1.0f)
     {
       scale_changed = true;
 
-      //m_near_clip = m_near_clip * (float)scale;
-      //m_far_clip = (float)(m_near_clip / m_vp_orig.PerspectiveMinNearOverFar());
-      //m_hmd->GetProjectionRaw(vr::Eye_Left,
-      //  &m_left_frus_left, &m_left_frus_right, &m_left_frus_top, &m_left_frus_bottom);
-
-      m_left_frus_left *= scale;
-      m_left_frus_right *= scale;
-      m_left_frus_top *= scale;
-      m_left_frus_bottom *= scale;
-
-      //m_hmd->GetProjectionRaw(vr::Eye_Right,
-      //  &m_right_frus_left, &m_right_frus_right, &m_right_frus_top, &m_right_frus_bottom);
-
-      m_right_frus_left *= scale;
-      m_right_frus_right *= scale;
-      m_right_frus_top *= scale;
-      m_right_frus_bottom *= scale;
-
-      m_frustum_conduit.SetFrustumLeft(
-        m_near_clip, m_far_clip,
-        m_left_frus_left, m_left_frus_right,
-        m_left_frus_top, m_left_frus_bottom);
-
-      m_frustum_conduit.SetFrustumRight(
-        m_near_clip, m_far_clip,
-        m_right_frus_left, m_right_frus_right,
-        m_right_frus_top, m_right_frus_bottom);
-
-      m_vp_orig_hmd_frus.SetFrustum(
-        m_left_frus_left, m_right_frus_right,
-        m_left_frus_top, m_left_frus_bottom,
-        m_near_clip, m_far_clip);
-
+      // Change scale here. Not yet implemented.
     }
   }
 
@@ -1400,7 +1383,6 @@ bool RhinoVrRenderer::HandleInput()
   {
     scale_changed = false;
   }
-  */
 
   m_device_index_left_hand = m_hmd->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_LeftHand);
   m_device_index_right_hand = m_hmd->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_RightHand);
@@ -1444,10 +1426,15 @@ bool RhinoVrRenderer::HandleInput()
 
       else if (is_right_hand &&
         RhinoVrGetIntersectingAppWindow(m_gh_window, right_hand_xform, left_hand_xform, isect_point, window_uv))
-        {
+      {
           window = m_gh_window.m_hwnd;
           window_pt = ScreenUvToPt(window_uv, m_gh_window.m_width, m_gh_window.m_height);
-        }
+      }
+
+      if (window)
+      {
+        m_window_intersected_this_frame = true;
+      }
     }
 
     if (controller.m_touchpad_button_pressed)
@@ -1592,16 +1579,12 @@ bool RhinoVrRenderer::HandleInput()
             double sign = vertical_offset >= 0.0 ? 1.0 : -1.0;
             double zoom_magnitude = sign * (abs(vertical_offset) - zoom_threshold) / (1.0 - zoom_threshold);
 
-            if (RhinoVrWindowMouseScroll(window, window_pt, 0.0, zoom_magnitude))
-            {
-              m_gh_window_zoomed_this_frame = true;
-            }
+            RhinoVrWindowMouseScroll(window, window_pt, 0.0, zoom_magnitude);
           }
 
           if (controller.m_trigger_button_pressed)
           {
             RhinoVrWindowMouseRightBtnDown(window, window_pt);
-            m_gh_window_panned_this_frame = true;
           }
           else if (controller.m_trigger_button_released)
           {

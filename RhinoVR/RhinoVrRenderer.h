@@ -281,10 +281,14 @@ protected:
   RhinoVrAppWindow m_rh_window;
 
   bool m_gh_window_left_btn_down;
-  bool m_gh_window_zoomed_this_frame;
-  bool m_gh_window_panned_this_frame;
+  bool m_window_intersected_this_frame;
 
   RhTimestamp m_last_window_update;
+
+  double m_move_speed; // Movement speed in meters per second
+  double m_turn_speed; // Turning speed in degrees per second
+  double m_last_frame_time;
+  RhTimestamp m_frame_timestamp;
 
   ON_Mesh m_hidden_mesh_left;  // The hidden area mesh for the left eye.
   ON_Mesh m_hidden_mesh_right; // The hidden area mesh for the right eye.
