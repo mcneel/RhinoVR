@@ -11,6 +11,7 @@ RhinoVrDeviceDisplayConduit::RhinoVrDeviceDisplayConduit()
   , m_device_material(nullptr)
   , m_device_mesh_xform(ON_Xform::IdentityTransformation)
   , m_device_cache_handle(nullptr)
+  , m_pointer_mesh(nullptr)
   , m_mesh_plane_cache_handles()
   , m_bounding_box(ON_BoundingBox::UnsetBoundingBox)
 {
@@ -34,9 +35,14 @@ bool RhinoVrDeviceDisplayConduit::ExecConduit(
     {
       dp.PushModelTransform(m_device_mesh_xform);
 
-      for (int i = 0; i < m_start_pts.Count(); ++i)
+      //for (int i = 0; i < m_start_pts.Count(); ++i)
+      //{
+      //  dp.DrawLine(m_start_pts[i], m_end_pts[i], m_colors[i]);
+      //}
+
+      if (m_pointer_mesh)
       {
-        dp.DrawLine(m_start_pts[i], m_end_pts[i], m_colors[i]);
+        dp.DrawShadedMeshes(&m_pointer_mesh, 1, m_pointer_mesh_material, &m_pointer_mesh_cache_handle);
       }
 
       dp.DrawShadedMeshes(&m_device_mesh, 1, m_device_material, &m_device_cache_handle);
@@ -57,6 +63,21 @@ bool RhinoVrDeviceDisplayConduit::ExecConduit(
 void RhinoVrDeviceDisplayConduit::Enable(unsigned int uiDocSerialNumber)
 {
   CRhinoDisplayConduit::Enable(uiDocSerialNumber);
+}
+
+void RhinoVrDeviceDisplayConduit::SetPointerMesh(const ON_Mesh* pointer_mesh)
+{
+  m_pointer_mesh = pointer_mesh;
+}
+
+void RhinoVrDeviceDisplayConduit::SetPointerMeshMaterial(const CDisplayPipelineMaterial* pointer_mesh_material)
+{
+  m_pointer_mesh_material = pointer_mesh_material;
+}
+
+void RhinoVrDeviceDisplayConduit::SetPointerMeshCacheHandle(CRhinoCacheHandle* cache_hande)
+{
+  m_pointer_mesh_cache_handle = cache_hande;
 }
 
 void RhinoVrDeviceDisplayConduit::SetDeviceMesh(const ON_Mesh* device_mesh)

@@ -5,6 +5,13 @@
 #include "RhinoVrHiddenAreaMeshDisplayConduit.h"
 #include <vector>
 
+enum class VrSystemType
+{
+    Unknown,
+    Vive,
+    Rift
+};
+
 // This class represents a VR device. It can be used
 // to render the device in Rhino.
 class RhinoVrDeviceModel
@@ -47,6 +54,26 @@ struct RhinoVrDeviceController
   bool m_a_button_down = false;
   bool m_a_button_pressed = false;
   bool m_a_button_released = false;
+
+  bool m_dpad_left_down = false;
+  bool m_dpad_left_pressed = false;
+  bool m_dpad_left_released = false;
+
+  bool m_dpad_right_down = false;
+  bool m_dpad_right_pressed = false;
+  bool m_dpad_right_released = false;
+
+  bool m_dpad_up_down = false;
+  bool m_dpad_up_pressed = false;
+  bool m_dpad_up_released = false;
+
+  bool m_dpad_down_down = false;
+  bool m_dpad_down_pressed = false;
+  bool m_dpad_down_released = false;
+
+  bool m_dpad_center_down = false;
+  bool m_dpad_center_pressed = false;
+  bool m_dpad_center_released = false;
 
   float m_trigger_button_value = 0.0f;
   ON_2dPoint m_touchpad_touch_point = ON_2dPoint::Origin;
@@ -204,6 +231,8 @@ protected:
   // The VR display pipeline down-cast to the OpenGL pipeline.
   CRhinoDisplayPipeline_OGL* m_vr_dp_ogl;
 
+  UUID m_previous_display_mode;
+
   float m_near_clip; // VR frustum near.
   float m_far_clip;  // VR frustum far.
 
@@ -263,6 +292,15 @@ protected:
   // shooting out from the controllers.
   ON_Line m_pointer_line;
 
+  // A mesh representing the pointer line.
+  ON_Mesh m_pointer_mesh;
+
+  CDisplayPipelineMaterial m_pointer_mesh_material;
+
+  CRhinoCacheHandle m_pointer_mesh_cache_handle;
+
+  VrSystemType m_vr_system_type = VrSystemType::Unknown;
+
   // The transforms of all tracked devices.
   vr::TrackedDevicePose_t m_device_poses[vr::k_unMaxTrackedDeviceCount];
 
@@ -283,12 +321,25 @@ protected:
   bool m_gh_window_left_btn_down;
   bool m_window_intersected_this_frame;
 
+  ON_2iPoint m_last_window_click_pos;
+
   RhTimestamp m_last_window_update;
+
+  const double MoveSpeedMax = 10.0;
+  const double MoveAcceleration = 3.0;
+  const double MoveDecelerationSoft = 6.0;
+  const double MoveDecelerationHard = 18.0;
 
   double m_move_speed; // Movement speed in meters per second
   double m_turn_speed; // Turning speed in degrees per second
   double m_last_frame_time;
   RhTimestamp m_frame_timestamp;
+
+  double m_move_speed_when_start_moving;
+  RhTimestamp m_start_moving_timestamp;
+
+  double m_move_speed_when_stop_moving;
+  RhTimestamp m_stop_moving_timestamp;
 
   ON_Mesh m_hidden_mesh_left;  // The hidden area mesh for the left eye.
   ON_Mesh m_hidden_mesh_right; // The hidden area mesh for the right eye.

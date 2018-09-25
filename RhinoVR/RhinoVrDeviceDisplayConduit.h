@@ -8,6 +8,10 @@ public:
   bool ExecConduit(CRhinoDisplayPipeline& dp, UINT nActiveChannel, bool& bTerminateChannel) override;
   void Enable(unsigned int uiDocSerialNumber);
 
+  void SetPointerMesh(const ON_Mesh* pointer_mesh);
+  void SetPointerMeshMaterial(const CDisplayPipelineMaterial* material);
+  void SetPointerMeshCacheHandle(CRhinoCacheHandle* cache_hande);
+
   void SetDeviceMesh(const ON_Mesh* device_mesh);
   void SetDeviceMaterial(const CDisplayPipelineMaterial* device_material);
   void SetDeviceMeshXform(const ON_Xform& device_xform);
@@ -30,6 +34,10 @@ private:
   ON_SimpleArray<CRhinoCacheHandle*> m_mesh_plane_cache_handles;
 
   bool m_draw_device_mesh;
+
+  const ON_Mesh* m_pointer_mesh;
+  const CDisplayPipelineMaterial* m_pointer_mesh_material;
+  CRhinoCacheHandle* m_pointer_mesh_cache_handle;
 
   const ON_Mesh* m_device_mesh;
   const CDisplayPipelineMaterial* m_device_material;
