@@ -13,11 +13,12 @@ Make sure you have at least Rhino 6 version 6.9.18241.07111. This means you need
 ## Usage
 Start Rhino and load the file you want to view in VR. Make sure a perspective viewport is selected and that it is set to the display mode you want to use. Type RhinoVR into the command line. This should automatically start Steam and SteamVR. If you're using the Rift, it will also start the Oculus client. Rhino tells you when it is ready and asks you to put the VR headset on.
 
-* It is possible to navigate around in the Rhino scene using the VR controllers (Vive and Rift). Vive uses the touchpads for navigation and the Rift uses the analog sticks. The left controller controls translation (forward, backward, left, right) and the right controller controls horizontal rotation (turning left/right) and up/down movement.
+* It is possible to navigate around in the Rhino scene using the VR controllers (Vive and Rift). Vive uses the touchpads for navigation and the Rift uses the analog sticks. The left controller controls movement and rotation (forward, backward, look left, look right).
 * Objects can be selected by pressing the touchpad button (Vive) or pressing the analog stick (Rift).
-* The Rhino Move-command can be initiated by pressing the Application Menu button (Vive) or the B-button (Rift). Remember, the move command works in steps: Select objects. Enter. Pick reference point. Pick new point.
-* A Rhino Enter key press can be mimicked using the VR controller by pressing the trigger button (Vive) or the A-button (Rift).
-* A Rhino Esc key press can be mimicked by squeezing the grip buttons (Vive) or by pressing the primary trigger button (Rift).
+* The Rhino Move-command can be initiated by pressing the right controller's Application Menu button (Vive) or the B-button (Rift). Remember, the move command works in steps: Select objects. Enter. Pick reference point. Pick new point.
+* A Rhino Enter key press can be mimicked using the right VR controller by pressing the trigger button (Vive) or the A-button (Rift).
+* A Rhino Esc key press can be mimicked by squeezing the right controller's grip buttons (Vive) or by pressing the primary trigger button (Rift).
+* A Rhino Undo key press can be mimicked by pressing the left controller's Application Menu button (Vive) or the B-button (Rift).
 
 Type RhinoVR into the command line again to close down RhinoVR.
 
