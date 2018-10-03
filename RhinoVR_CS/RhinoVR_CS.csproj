@@ -54,8 +54,13 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="openvr_api.cs" />
+    <Compile Include="..\OpenVR\headers\openvr_api.cs">
+      <Link>openvr_api.cs</Link>
+    </Compile>
+    <Compile Include="Marshal.cs" />
     <Compile Include="RhinoVrCommand.cs" />
+    <Compile Include="RhinoVrDeviceDisplayConduit.cs" />
+    <Compile Include="RhinoVrHiddenAreaMeshDisplayConduit.cs" />
     <Compile Include="RhinoVrPlugIn.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RhinoVrRenderer.cs" />
@@ -73,7 +78,11 @@
   -->
   <PropertyGroup>
     <PostBuildEvent>Copy "$(TargetPath)" "$(TargetDir)$(ProjectName).rhp"
-Erase "$(TargetPath)"</PostBuildEvent>
+Erase "$(TargetPath)"
+
+Copy /Y "$(SolutionDir)OpenVR\bin\win64\openvr_api.dll" "$(TargetDir)openvr_api.dll"
+Copy /Y "$(SolutionDir)OpenVR\bin\win64\openvr_api.pdb" "$(TargetDir)openvr_api.pdb"
+Copy /Y "$(SolutionDir)OpenVR\LICENSE" "$(TargetDir)LICENSE"</PostBuildEvent>
   </PropertyGroup>
   <PropertyGroup>
     <FallbackCulture>en-US</FallbackCulture>

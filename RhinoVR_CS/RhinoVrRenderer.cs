@@ -8,7 +8,15 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Text;
+using System.Runtime.InteropServices;
 using Valve.VR;
+
+enum VrSystemType
+{
+    Unknown,
+    Vive,
+    Rift
+};
 
 // This class represents a VR device. It can be used
 // to render the device in Rhino.
@@ -46,9 +54,9 @@ public class RhinoVrDeviceModel
             float uv0 = rm_vertex.rfTextureCoord0;
             float uv1 = rm_vertex.rfTextureCoord1;
             
-            m_device_mesh.Vertices[vi] = unit_scale * new Point3f(v.v0, v.v1, v.v2);
-            m_device_mesh.Normals[vi]  = unit_scale * new Vector3f(n.v0, n.v1, n.v2);
-            m_device_mesh.TextureCoordinates[vi] = new Point2f(uv0, uv1) * unit_scale;
+            m_device_mesh.Vertices[vi] = new Point3f(v.v0, v.v1, v.v2) * unit_scale;
+            m_device_mesh.Normals[vi] = new Vector3f(n.v0, n.v1, n.v2);
+            m_device_mesh.TextureCoordinates[vi] = new Point2f(uv0, uv1);
         }
 
         var triangle_count = (int)model.unTriangleCount;
@@ -66,15 +74,28 @@ public class RhinoVrDeviceModel
             triangle.C = vertex_indices[idx++];
             triangle.D = triangle.C;
         }
-        
-        // TODO: I don't know how to do this yet
-        SimulatedTexture st = new SimulatedTexture();
-        st.Filename = "test";
-        var render_texture = RenderTexture.NewBitmapTexture(st, doc);
-        // END TODO
-        
+
+        var pixels = OpenVrMarshal.FromIntPtrToArray<byte>(
+            diffuse_texture.rubTextureMapData, (uint)diffuse_texture.unWidth * diffuse_texture.unHeight * 4);
+
+        var bitmap = new Bitmap(diffuse_texture.unWidth, diffuse_texture.unHeight);
+        for(int x = 0; x < bitmap.Width; ++x)
+        {
+            for(int y = 0; y < bitmap.Height; ++y)
+            {
+                int pixel_idx = 4*(y * bitmap.Width + x);
+
+                byte b0 = pixels[pixel_idx + 0];
+                byte b1 = pixels[pixel_idx + 1];
+                byte b2 = pixels[pixel_idx + 2];
+                byte b3 = pixels[pixel_idx + 3];
+
+                bitmap.SetPixel(x, y, Color.FromArgb(b0, b1, b2, b3));
+            }
+        }
+
+        var render_texture = RenderTexture.NewBitmapTexture(bitmap, doc);
         var rdk_material = RenderMaterial.CreateBasicMaterial(new Material(), doc);
-        rdk_material.Initialize();
 
         var child_slot_name = rdk_material.TextureChildSlotName(RenderMaterial.StandardChildSlots.Diffuse);
 
@@ -83,8 +104,6 @@ public class RhinoVrDeviceModel
         rdk_material.SetChildSlotAmount(child_slot_name, 100.0, RenderContent.ChangeContexts.Program);
 
         m_device_material = new DisplayMaterial(rdk_material.SimulateMaterial(false));
-
-        rdk_material.Uninitialize();
 
         return true;
     }
@@ -356,7 +375,7 @@ public class RhinoVrRenderer
     // Loads all needed render models from the VR library.
     protected void SetupRenderModels()
     {
-        for(uint device_idx = OpenVR.k_unTrackedDeviceIndex_Hmd + 1; device_idx < OpenVR.k_unMaxTrackedDeviceCount; ++device_idx )
+        for(uint device_idx = OpenVR.k_unTrackedDeviceIndex_Hmd; device_idx < OpenVR.k_unMaxTrackedDeviceCount; ++device_idx )
         {
             if (!OpenVR.System.IsTrackedDeviceConnected(device_idx))
                 continue;
@@ -368,13 +387,13 @@ public class RhinoVrRenderer
         m_hidden_mesh_right = LoadHiddenAreaMesh(EVREye.Eye_Right);
     }
 
-    private String GetTrackedDeviceString(uint device_idx, ETrackedDeviceProperty device_property, out ETrackedPropertyError error)
+    private string GetTrackedDeviceString(uint device_idx, ETrackedDeviceProperty device_property, out ETrackedPropertyError error)
     {
         error = ETrackedPropertyError.TrackedProp_Success;
 
         uint required_buffer_len = OpenVR.System.GetStringTrackedDeviceProperty(device_idx, device_property, null, 0, ref error);
         if (required_buffer_len == 0)
-            return String.Empty;
+            return string.Empty;
 
         var string_builder = new StringBuilder();
 
@@ -389,12 +408,42 @@ public class RhinoVrRenderer
         if (device_index >= OpenVR.k_unMaxTrackedDeviceCount)
             return;
         
-        String render_model_name = GetTrackedDeviceString(device_index, ETrackedDeviceProperty.Prop_RenderModelName_String, out ETrackedPropertyError error);
+        string system_name = GetTrackedDeviceString(device_index, ETrackedDeviceProperty.Prop_TrackingSystemName_String, out ETrackedPropertyError error);
+
+        ETrackedDeviceClass device_class = OpenVR.System.GetTrackedDeviceClass(device_index);
+        if(device_class == ETrackedDeviceClass.HMD)
+        {
+            if(system_name.Equals("oculus", StringComparison.Ordinal))
+            {
+                m_vr_system_type = VrSystemType.Rift;
+            }
+            else
+            {
+                m_vr_system_type = VrSystemType.Vive;
+            }
+        }
+
+        string render_model_name = GetTrackedDeviceString(device_index, ETrackedDeviceProperty.Prop_RenderModelName_String, out error);
+
+        // We don't want to show the headset, Vive base stations or the Rift cameras.
+        if (render_model_name.Equals("generic_hmd", StringComparison.Ordinal) ||
+            render_model_name.Equals("lh_basestation_vive", StringComparison.Ordinal) ||
+            render_model_name.Equals("rift_camera", StringComparison.Ordinal))
+        {
+            return;
+        }
 
         RhinoVrDeviceModel render_model = FindOrLoadRenderModel(render_model_name);
         if (render_model == null)
         {
-
+            RhinoApp.WriteLine("Unable to load render model for tracked device {0} ({1}.{2})",
+              device_index, system_name, render_model_name);
+        }
+        else
+        {
+            RhinoVrDeviceData device_data = m_device_data[(int)device_index];
+            device_data.m_render_model = render_model;
+            device_data.m_show = true;
         }
     }
 
@@ -410,7 +459,84 @@ public class RhinoVrRenderer
     // first be loaded from the VR library.
     protected RhinoVrDeviceModel FindOrLoadRenderModel(string render_model_name)
     {
-        return null;
+        if (m_doc == null)
+            return null;
+
+        RhinoVrDeviceModel render_model = null;
+        foreach (RhinoVrDeviceModel dm in m_device_render_models)
+        {
+            if (dm.m_device_name.Equals(render_model_name, StringComparison.Ordinal))
+            {
+                render_model = dm;
+                break;
+            }
+        }
+
+        if (render_model == null)
+        {
+            EVRRenderModelError error;
+            
+            var model_ptr = new IntPtr();
+
+            while (true)
+            {
+                error = OpenVR.RenderModels.LoadRenderModel_Async(render_model_name, ref model_ptr);
+                if (error != EVRRenderModelError.Loading)
+                {
+                    break;
+                }
+
+                System.Threading.Thread.Sleep(1);
+            }
+
+            if (error != EVRRenderModelError.None)
+            {
+                RhinoApp.WriteLine("Unable to load render model {0} - {1}", render_model_name, OpenVR.RenderModels.GetRenderModelErrorNameFromEnum(error));
+                return null;
+            }
+
+            var model = (RenderModel_t)Marshal.PtrToStructure(model_ptr, typeof(RenderModel_t));
+
+            var texture_ptr = new IntPtr();
+
+            while (true)
+            {
+                error = OpenVR.RenderModels.LoadTexture_Async(model.diffuseTextureId, ref texture_ptr);
+                if (error != EVRRenderModelError.Loading)
+                {
+                    break;
+                }
+
+                System.Threading.Thread.Sleep(1);
+            }
+
+            if (error != EVRRenderModelError.None)
+            {
+                OpenVR.RenderModels.FreeRenderModel(model_ptr);
+
+                RhinoApp.WriteLine("Unable to load render texture id:{0} for render model {1}", model.diffuseTextureId, render_model_name);
+
+                return null;
+            }
+
+            var texture = (RenderModel_TextureMap_t)Marshal.PtrToStructure(texture_ptr, typeof(RenderModel_TextureMap_t));
+            
+            render_model = new RhinoVrDeviceModel(render_model_name);
+            
+            if (render_model.Initialize(model, texture, (float)m_unit_scale, m_doc))
+            {
+                m_device_render_models.Add(render_model);
+            }
+            else
+            {
+                RhinoApp.WriteLine("Unable to create Rhino Mesh model from render model {0}", render_model_name);
+            }
+
+            OpenVR.RenderModels.FreeRenderModel(model_ptr);
+            OpenVR.RenderModels.FreeTexture(texture_ptr);
+        }
+
+        return render_model;
     }
 
     // Provide device display conduits with updated device information.
@@ -647,6 +773,8 @@ public class RhinoVrRenderer
     // A line which represents the object-space pointer line
     // shooting out from the controllers.
     protected Line m_pointer_line = Line.Unset;
+
+    VrSystemType m_vr_system_type = VrSystemType.Unknown;
 
     // The transforms of all tracked devices.
     protected TrackedDevicePose_t[] m_device_poses = new TrackedDevicePose_t[OpenVR.k_unMaxTrackedDeviceCount];

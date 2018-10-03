@@ -28,7 +28,7 @@ namespace RhinoVR_CS
         ///<returns>The command name as it appears on the Rhino command line.</returns>
         public override string EnglishName
         {
-            get { return "RhinoVR"; }
+            get { return "RhinoVRCommon"; }
         }
 
         protected override Result RunCommand(RhinoDoc doc, RunMode mode)
@@ -51,7 +51,6 @@ namespace RhinoVR_CS
 
             if(!RhinoVrStruct.m_renderer.Initialize())
             {
-                RhinoVrStruct.m_renderer.Dispose();
                 RhinoVrStruct.m_renderer = null;
 
                 return Result.Failure;
@@ -67,7 +66,7 @@ namespace RhinoVR_CS
 
         protected void OnMainLoop(object sender, EventArgs e)
         {
-            if (RhinoVrStruct.m_running && RhinoVrStruct.m_renderer)
+            if (RhinoVrStruct.m_running && (RhinoVrStruct.m_renderer != null))
             {
                 RhinoVrStruct.m_renderer.ProcessInputAndRenderFrame();
             }
@@ -87,8 +86,7 @@ namespace RhinoVR_CS
 
             RhinoApp.MainLoop      -= OnMainLoop;
             RhinoDoc.CloseDocument -= OnCloseDocument;
-
-            RhinoVrStruct.m_renderer.Dispose();
+            
             RhinoVrStruct.m_renderer = null;
         }
     }
