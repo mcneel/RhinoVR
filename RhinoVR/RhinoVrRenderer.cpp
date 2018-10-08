@@ -81,8 +81,6 @@ RhinoVrRenderer::~RhinoVrRenderer()
 
 HWND FindApplicationWindow(const wchar_t* app_title_string)
 {
-  const int app_string_length = (int)wcslen(app_title_string);
-
   const int window_text_length = 256;
   wchar_t window_text[window_text_length];
 

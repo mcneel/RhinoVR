@@ -54,10 +54,8 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\OpenVR\headers\openvr_api.cs">
-      <Link>openvr_api.cs</Link>
-    </Compile>
     <Compile Include="Marshal.cs" />
+    <Compile Include="openvr_api.cs" />
     <Compile Include="RhinoVrCommand.cs" />
     <Compile Include="RhinoVrDeviceDisplayConduit.cs" />
     <Compile Include="RhinoVrHiddenAreaMeshDisplayConduit.cs" />
