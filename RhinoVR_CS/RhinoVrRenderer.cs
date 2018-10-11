@@ -52,7 +52,7 @@ public class RhinoVrDeviceModel
             
             m_device_mesh.Vertices[vi] = new Point3f(v.v0, v.v1, v.v2) * unit_scale;
             m_device_mesh.Normals[vi] = new Vector3f(n.v0, n.v1, n.v2);
-            m_device_mesh.TextureCoordinates[vi] = new Point2f(uv0, uv1);
+            m_device_mesh.TextureCoordinates[vi] = new Point2f(uv0, 1.0 - uv1);
         }
 
         var triangle_count = (int)model.unTriangleCount;
@@ -64,29 +64,33 @@ public class RhinoVrDeviceModel
 
         for (int fi = 0, idx = 0; fi < triangle_count; ++fi)
         {
-            MeshFace triangle = m_device_mesh.Faces[fi];
-            triangle.A = vertex_indices[idx++];
-            triangle.B = vertex_indices[idx++];
-            triangle.C = vertex_indices[idx++];
+            var triangle = new MeshFace
+            {
+                A = vertex_indices[idx++],
+                B = vertex_indices[idx++],
+                C = vertex_indices[idx++]
+            };
             triangle.D = triangle.C;
+
+            m_device_mesh.Faces[fi] = triangle;
         }
 
         var pixels = OpenVrMarshal.FromIntPtrToArray<byte>(
             diffuse_texture.rubTextureMapData, (uint)diffuse_texture.unWidth * diffuse_texture.unHeight * 4);
 
         var bitmap = new Bitmap(diffuse_texture.unWidth, diffuse_texture.unHeight);
-        for(int x = 0; x < bitmap.Width; ++x)
+        for (int y = 0; y < bitmap.Height; ++y)
         {
-            for(int y = 0; y < bitmap.Height; ++y)
+            for (int x = 0; x < bitmap.Width; ++x)
             {
-                int pixel_idx = 4*(y * bitmap.Width + x);
+                int pixel_idx = 4 * (y * bitmap.Width + x);
 
-                byte b0 = pixels[pixel_idx + 0];
-                byte b1 = pixels[pixel_idx + 1];
-                byte b2 = pixels[pixel_idx + 2];
-                byte b3 = pixels[pixel_idx + 3];
+                byte r = pixels[pixel_idx + 0];
+                byte g = pixels[pixel_idx + 1];
+                byte b = pixels[pixel_idx + 2];
+                byte a = pixels[pixel_idx + 3];
 
-                bitmap.SetPixel(x, y, Color.FromArgb(b0, b1, b2, b3));
+                bitmap.SetPixel(x, y, Color.FromArgb(a, r, g, b));
             }
         }
 
@@ -107,7 +111,6 @@ public class RhinoVrDeviceModel
     public string m_device_name;
     public Mesh m_device_mesh = null;
     public DisplayMaterial m_device_material = null;
-    //public CacheHandle m_cache_handle = null;
 }
 
 // This struct represents the current state of
@@ -189,12 +192,17 @@ public class RhinoVrDeviceData
 
 // RhinoVrRenderer is the main class of RhinoVR. It handles VR library
 // initialization, input handling and frame drawing.
-public class RhinoVrRenderer
+public class RhinoVrRenderer : IDisposable
 {
     public RhinoVrRenderer(uint doc_sn, uint view_sn)
     {
         m_doc_sn = doc_sn;
         m_view_sn = view_sn;
+
+        for (int i = 0; i < m_device_poses.Length; ++i)
+        {
+            m_device_poses[i] = new TrackedDevicePose_t();
+        }
 
         for (int i = 0; i < OpenVR.k_unMaxTrackedDeviceCount; ++i)
         {
@@ -202,16 +210,30 @@ public class RhinoVrRenderer
         }
     }
 
-    ~RhinoVrRenderer()
+    private bool disposed = false; // To detect redundant calls
+
+    protected virtual void Dispose(bool disposing)
     {
-        // TODO: How do I handle WM_TIMER messages in C#?
-        // We need to kill our custom timer here.
+        if (!disposed)
+        {
+            if (disposing)
+            {
+                // TODO: How do I handle WM_TIMER messages in C#?
+                // We need to kill our custom timer here.
 
-        OpenVR.Shutdown();
+                OpenVR.Shutdown();
 
-        // TODO: How do I change ViewportId to nil_uuid?
+                RhinoApp.WriteLine("RhinoVR is OFF.");
+            }
 
-        RhinoApp.WriteLine("RhinoVR is OFF.");
+            disposed = true;
+        }
+    }
+
+    // This code added to correctly implement the disposable pattern.
+    public void Dispose()
+    {
+        Dispose(true);
     }
 
     public bool Initialize()
@@ -247,9 +269,8 @@ public class RhinoVrRenderer
         m_doc = RhinoDoc.FromRuntimeSerialNumber(m_doc_sn);
         if (m_doc == null)
             return false;
-
-        // TODO: ON_UnitSystem has not been wrapped.
-        m_unit_scale = 1.0;
+        
+        m_unit_scale = RhinoMath.UnitScale(m_doc.ModelUnitSystem, UnitSystem.Meters);
 
         var start = new Point3d(0.0, 0.0, -0.02);
         var end = new Point3d(0.0, 0.0, -500.0);
@@ -323,7 +344,7 @@ public class RhinoVrRenderer
             int vp_new_width = vp.ScreenPort.Width / 2;
             int vp_new_height = (int)Math.Floor(vp_new_width / vp.FrustumAspect + 0.5);
 
-            String script = String.Format("-_ViewportProperties _Size {0} {1} _Enter", vp_new_width, vp_new_height);
+            string script = string.Format("-_ViewportProperties _Size {0} {1} _Enter", vp_new_width, vp_new_height);
             RhinoApp.RunScript(script, false);
 
             view.ActiveViewport.SetViewProjection(vp, true);
@@ -675,7 +696,8 @@ public class RhinoVrRenderer
                 {
                     if (current_window_needs_update)
                     {
-                        
+                        // TODO: Implement later once we can use 'GetClientRect', 'GetDC',
+                        // 'BitBlt' and more in C#/RhinoCommon/Eto...
 
                         /*
                         RECT window_dim;
@@ -743,23 +765,18 @@ public class RhinoVrRenderer
 
                 if (draw_pointer)
                 {
-                    //ddc.AddLine(m_pointer_line.from, m_pointer_line.to, ON_Color::SaturatedGreen);
-
                     ddc.SetPointerMesh(m_pointer_mesh);
                     ddc.SetPointerMeshMaterial(m_pointer_mesh_material);
-                    //ddc.SetPointerMeshCacheHandle(m_pointer_mesh_cache_handle);
                 }
             }
 
             Mesh device_mesh = device_model.m_device_mesh;
             DisplayMaterial device_material = device_model.m_device_material;
             Transform device_xform = camera_to_world_xform * device_data.m_xform;
-            //CacheHandle device_cache_handle = device_model.m_cache_handle;
 
             ddc.SetDeviceMesh(device_mesh);
             ddc.SetDeviceMaterial(device_material);
             ddc.SetDeviceMeshXform(device_xform);
-            //ddc.SetDeviceMeshCacheHandle(device_cache_handle);
 
             if (!ddc.Enabled)
             {
@@ -767,18 +784,18 @@ public class RhinoVrRenderer
             }
         }
 
-        m_hidden_mesh_display_conduit.SetHiddenAreaMesh(m_hidden_mesh_left, EVREye.Eye_Left);
-        m_hidden_mesh_display_conduit.SetHiddenAreaMesh(m_hidden_mesh_right, EVREye.Eye_Right);
-
-        m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(clip_to_left_eye_xform, EVREye.Eye_Left);
-        m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(clip_to_right_eye_xform, EVREye.Eye_Right);
-
-        //m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(m_hidden_mesh_left_cache_handle, EVREye.Eye_Left);
-        //m_hidden_mesh_display_conduit.SetHiddenAreaMeshCacheHandle(m_hidden_mesh_right_cache_handle, EVREye.Eye_Right);
-
-        if (!m_hidden_mesh_display_conduit.Enabled)
+        if(m_hidden_mesh_display_conduit != null)
         {
-            m_hidden_mesh_display_conduit.Enabled = true;
+            m_hidden_mesh_display_conduit.SetHiddenAreaMesh(m_hidden_mesh_left, EVREye.Eye_Left);
+            m_hidden_mesh_display_conduit.SetHiddenAreaMesh(m_hidden_mesh_right, EVREye.Eye_Right);
+
+            m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(clip_to_left_eye_xform, EVREye.Eye_Left);
+            m_hidden_mesh_display_conduit.SetHiddenAreaMeshXform(clip_to_right_eye_xform, EVREye.Eye_Right);
+            
+            if (!m_hidden_mesh_display_conduit.Enabled)
+            {
+                m_hidden_mesh_display_conduit.Enabled = true;
+            }
         }
     }
 
@@ -805,7 +822,7 @@ public class RhinoVrRenderer
     // This function will wait for the HMD's vertical sync signal.
     protected bool UpdatePosesAndWaitForVSync()
     {
-        OpenVR.Compositor.WaitGetPoses(m_device_poses, null);
+        OpenVR.Compositor.WaitGetPoses(m_device_poses, m_game_poses);
 
         return true;
     }
@@ -947,12 +964,12 @@ public class RhinoVrRenderer
         var vp = new ViewportInfo(m_vp_orig_hmd_frus)
         {
             IsParallelProjection = rhino_vp.IsParallelProjection,
-            IsPerspectiveProjection = rhino_vp.IsPerspectiveProjection,
-            TargetPoint = new Point3d(-Vector3d.ZAxis * rhino_vp.TargetDistance(true))
+            IsPerspectiveProjection = rhino_vp.IsPerspectiveProjection
         };
         vp.SetCameraLocation(Point3d.Origin);
         vp.SetCameraDirection(-Vector3d.ZAxis);
         vp.SetCameraUp(Vector3d.YAxis);
+        vp.TargetPoint = new Point3d(-Vector3d.ZAxis * rhino_vp.TargetDistance(true));
         vp.SetFrustumNearFar(m_near_clip, m_far_clip);
 
         if (m_cam_to_world_xform == Transform.Unset)
@@ -982,8 +999,8 @@ public class RhinoVrRenderer
             frame.Transform(m_cam_to_world_xform * left_hand_xform);
 
             // Apply translation due to controller.
-            Vector3d contr_dir   = frame.ZAxis;
-            Vector3d contr_up    = frame.YAxis;
+            Vector3d contr_dir = frame.ZAxis;
+            Vector3d contr_up = frame.YAxis;
             Vector3d contr_right = frame.XAxis;
 
             Vector3d hmd_dolly = Vector3d.Zero;
@@ -1011,7 +1028,7 @@ public class RhinoVrRenderer
 
         Transform cam_to_left_eye_xform = hmd_to_world_final_xform * m_left_eye_xform;
 
-        m_vp_left_eye = vp;
+        m_vp_left_eye = new ViewportInfo(vp);
 
         m_vp_left_eye.TransformCamera(cam_to_left_eye_xform);
         m_vp_left_eye.SetFrustum(
@@ -1023,7 +1040,7 @@ public class RhinoVrRenderer
 
         Transform cam_to_right_eye_xform = hmd_to_world_final_xform * m_right_eye_xform;
 
-        m_vp_right_eye = vp;
+        m_vp_right_eye = new ViewportInfo(vp);
 
         m_vp_right_eye.TransformCamera(cam_to_right_eye_xform);
         m_vp_right_eye.SetFrustum(
@@ -1129,24 +1146,26 @@ public class RhinoVrRenderer
         {
             Transform left_hand_xform = m_device_data[(int)m_device_index_left_hand].m_xform;
             Transform right_hand_xform = m_device_data[(int)m_device_index_right_hand].m_xform;
-            
-            if (m_rh_window.m_enabled)
-            {
-                if (RhinoVrGetIntersectingAppWindow(m_rh_window, left_hand_xform, right_hand_xform, out Point3d isect_point, out Point2d window_uv))
-                {
-                    isect_rh_window = m_rh_window.m_hwnd;
-                    isect_rh_window_pt = ScreenUvToPt(window_uv, m_rh_window.m_width, m_rh_window.m_height);
-                }
-            }
 
-            if (m_gh_window.m_enabled)
-            {
-                if (RhinoVrGetIntersectingAppWindow(m_gh_window, right_hand_xform, left_hand_xform, out Point3d isect_point, out Point2d window_uv))
-                {
-                    isect_gh_window = m_gh_window.m_hwnd;
-                    isect_gh_window_pt = ScreenUvToPt(window_uv, m_gh_window.m_width, m_gh_window.m_height);
-                }
-            }
+            // TODO: Implement once we can simulate mouse events in Eto.
+
+            //if (m_rh_window.m_enabled)
+            //{
+            //    if (RhinoVrGetIntersectingAppWindow(m_rh_window, left_hand_xform, right_hand_xform, out Point3d isect_point, out Point2d window_uv))
+            //    {
+            //        isect_rh_window = m_rh_window.m_hwnd;
+            //        isect_rh_window_pt = ScreenUvToPt(window_uv, m_rh_window.m_width, m_rh_window.m_height);
+            //    }
+            //}
+
+            //if (m_gh_window.m_enabled)
+            //{
+            //    if (RhinoVrGetIntersectingAppWindow(m_gh_window, right_hand_xform, left_hand_xform, out Point3d isect_point, out Point2d window_uv))
+            //    {
+            //        isect_gh_window = m_gh_window.m_hwnd;
+            //        isect_gh_window_pt = ScreenUvToPt(window_uv, m_gh_window.m_width, m_gh_window.m_height);
+            //    }
+            //}
         }
 
         IntPtr isect_window = IntPtr.Zero;
@@ -1181,54 +1200,60 @@ public class RhinoVrRenderer
 
             if (controller.m_dpad_center_pressed)
             {
-                if (is_right_hand && Rhino.Input.RhinoGet.InGetPoint(m_doc))
-                {
-                    RhinoVrGetPoint(device_data.m_xform);
-                }
-                else if (isect_window != IntPtr.Zero)
-                {
-                    RhinoVrWindowMouseLeftBtnDown(isect_window, isect_window_pt);
-                    if (isect_gh_window != IntPtr.Zero)
-                    {
-                        m_gh_window_left_btn_down = true;
-                        m_last_window_click_pos = isect_window_pt;
-                    }
-                }
-                else if (is_right_hand)
-                {
-                    if (RhinoVrGetIntersectingObject(device_data.m_xform, out RhinoObject isect_object, out Point3d isect_point))
-                    {
-                        if (Rhino.Input.RhinoGet.InGetObject(m_doc))
-                        {
-                            Rhino.Input.Custom.GetObject go = Rhino.Input.Custom.GetObject.ActiveGetObject(m_doc);
-                            go.AppendToPickList(new ObjRef(isect_object));
-                            
-                            // TODO: Find out if this is needed.
-                            //go->PostObjectSelectionChangedEvent(m_view);
-                        }
-                        else
-                        {
-                            isect_object.Select(true);
-                        }
-                    }
-                }
+                // TODO: Implement once we can simulate mouse events in Eto.
+
+                //if (is_right_hand && Rhino.Input.RhinoGet.InGetPoint(m_doc))
+                //{
+                //    RhinoVrGetPoint(device_data.m_xform);
+                //}
+                //else if (isect_window != IntPtr.Zero)
+                //{
+                //    RhinoVrWindowMouseLeftBtnDown(isect_window, isect_window_pt);
+                //    if (isect_gh_window != IntPtr.Zero)
+                //    {
+                //        m_gh_window_left_btn_down = true;
+                //        m_last_window_click_pos = isect_window_pt;
+                //    }
+                //}
+                //else if (is_right_hand)
+                //{
+                //    if (RhinoVrGetIntersectingObject(device_data.m_xform, out RhinoObject isect_object, out Point3d isect_point))
+                //    {
+                //        if (Rhino.Input.RhinoGet.InGetObject(m_doc))
+                //        {
+                //            Rhino.Input.Custom.GetObject go = Rhino.Input.Custom.GetObject.ActiveGetObject(m_doc);
+                //            go.AppendToPickList(new ObjRef(isect_object));
+
+                //            // TODO: Find out if this is needed.
+                //            //go->PostObjectSelectionChangedEvent(m_view);
+                //        }
+                //        else
+                //        {
+                //            isect_object.Select(true);
+                //        }
+                //    }
+                //}
             }
             else if (controller.m_dpad_center_released)
             {
                 if (isect_window != IntPtr.Zero)
                 {
-                    RhinoVrWindowMouseLeftBtnUp(isect_window, isect_window_pt);
-                    if (isect_gh_window != IntPtr.Zero)
-                    {
-                        m_gh_window_left_btn_down = false;
-                    }
+                    // TODO: Implement once we can simulate mouse events in Eto.
+
+                    //RhinoVrWindowMouseLeftBtnUp(isect_window, isect_window_pt);
+                    //if (isect_gh_window != IntPtr.Zero)
+                    //{
+                    //    m_gh_window_left_btn_down = false;
+                    //}
                 }
             }
             else if (controller.m_dpad_center_down)
             {
                 if (isect_window != IntPtr.Zero)
                 {
-                    RhinoVrWindowMouseMove(isect_window, isect_window_pt);
+                    // TODO: Implement once we can simulate mouse events in Eto.
+
+                    //RhinoVrWindowMouseMove(isect_window, isect_window_pt);
                 }
             }
             else if (is_left_hand && controller.m_appmenu_button_pressed)
@@ -1277,86 +1302,92 @@ public class RhinoVrRenderer
             {
                 if (is_right_hand && Rhino.Input.RhinoGet.InGetPoint(m_doc))
                 {
-                    RhinoVrOnMouseMove(device_data.m_xform);
+                    // TODO: Implement once we can simulate mouse events in Eto.
+
+                    //RhinoVrOnMouseMove(device_data.m_xform);
                 }
                 else if (isect_window != IntPtr.Zero)
                 {
-                    RhinoVrWindowMouseMove(isect_window, isect_window_pt);
+                    // TODO: Implement once we can simulate mouse events in Eto.
+
+                    //RhinoVrWindowMouseMove(isect_window, isect_window_pt);
                 }
             }
 
-            if (is_left_hand)
-            {
-                if (controller.m_trigger_button_value > 0.001)
-                {
-                    if (m_gh_window.m_hwnd == IntPtr.Zero && controller.m_trigger_button_value > 0.9)
-                    {
-                        InitializeAppWindow(m_gh_window, "Grasshopper");
+            // TODO: Implement once we can simulate mouse events in Eto.
 
-                        if (m_gh_window.m_hwnd == IntPtr.Zero && !m_tried_launching_gh)
-                        {
-                            RhinoApp.ExecuteCommand(m_doc, "Grasshopper");
-                            m_tried_launching_gh = true;
+            //if (is_left_hand)
+            //{
+            //    if (controller.m_trigger_button_value > 0.001)
+            //    {
+            //        if (m_gh_window.m_hwnd == IntPtr.Zero && controller.m_trigger_button_value > 0.9)
+            //        {
+            //            InitializeAppWindow(m_gh_window, "Grasshopper");
 
-                            // Need to re-attach since ExecuteCommand pumps messages
-                            // and can basically do anything, including e.g. deleting views.
-                            if (!AttachDocAndView())
-                                return false;
-                        }
-                    }
-                    else if (m_gh_window.m_hwnd == IntPtr.Zero)
-                    {
-                        m_gh_window.m_enabled = false;
-                        m_gh_window.m_opacity = 1.0;
-                    }
+            //            if (m_gh_window.m_hwnd == IntPtr.Zero && !m_tried_launching_gh)
+            //            {
+            //                RhinoApp.ExecuteCommand(m_doc, "Grasshopper");
+            //                m_tried_launching_gh = true;
 
-                    m_gh_window.m_enabled = true;
-                    m_gh_window.m_opacity = controller.m_trigger_button_value;
-                }
-                else
-                {
-                    m_gh_window.m_enabled = false;
-                    m_gh_window.m_opacity = 1.0;
-                }
+            //                // Need to re-attach since ExecuteCommand pumps messages
+            //                // and can basically do anything, including e.g. deleting views.
+            //                if (!AttachDocAndView())
+            //                    return false;
+            //            }
+            //        }
+            //        else if (m_gh_window.m_hwnd == IntPtr.Zero)
+            //        {
+            //            m_gh_window.m_enabled = false;
+            //            m_gh_window.m_opacity = 1.0;
+            //        }
 
-                if (controller.m_dpad_up_down || controller.m_dpad_down_down)
-                {
-                    if (isect_gh_window != IntPtr.Zero)
-                    {
-                        if (!m_gh_window_left_btn_down)
-                        {
-                            const double zoom_threshold = 0.4;
+            //        m_gh_window.m_enabled = true;
+            //        m_gh_window.m_opacity = controller.m_trigger_button_value;
+            //    }
+            //    else
+            //    {
+            //        m_gh_window.m_enabled = false;
+            //        m_gh_window.m_opacity = 1.0;
+            //    }
 
-                            double vertical_offset = controller.m_touchpad_touch_point.Y;
+            //    if (controller.m_dpad_up_down || controller.m_dpad_down_down)
+            //    {
+            //        if (isect_gh_window != IntPtr.Zero)
+            //        {
+            //            if (!m_gh_window_left_btn_down)
+            //            {
+            //                const double zoom_threshold = 0.4;
 
-                            if (Math.Abs(vertical_offset) > zoom_threshold)
-                            {
-                                double sign = vertical_offset >= 0.0 ? 1.0 : -1.0;
-                                double zoom_magnitude = sign * (Math.Abs(vertical_offset) - zoom_threshold) / (1.0 - zoom_threshold);
+            //                double vertical_offset = controller.m_touchpad_touch_point.Y;
 
-                                RhinoVrWindowMouseScroll(isect_gh_window, isect_gh_window_pt, 0.0, zoom_magnitude);
-                            }
-                        }
-                    }
-                }
-            }
-            else if (is_right_hand)
-            {
-                if (isect_gh_window != IntPtr.Zero)
-                {
-                    if (!m_gh_window_left_btn_down)
-                    {
-                        if (controller.m_trigger_button_pressed)
-                        {
-                            RhinoVrWindowMouseRightBtnDown(isect_gh_window, isect_gh_window_pt);
-                        }
-                        else if (controller.m_trigger_button_released)
-                        {
-                            RhinoVrWindowMouseRightBtnUp(isect_gh_window, isect_gh_window_pt);
-                        }
-                    }
-                }
-            }
+            //                if (Math.Abs(vertical_offset) > zoom_threshold)
+            //                {
+            //                    double sign = vertical_offset >= 0.0 ? 1.0 : -1.0;
+            //                    double zoom_magnitude = sign * (Math.Abs(vertical_offset) - zoom_threshold) / (1.0 - zoom_threshold);
+
+            //                    RhinoVrWindowMouseScroll(isect_gh_window, isect_gh_window_pt, 0.0, zoom_magnitude);
+            //                }
+            //            }
+            //        }
+            //    }
+            //}
+            //else if (is_right_hand)
+            //{
+            //    if (isect_gh_window != IntPtr.Zero)
+            //    {
+            //        if (!m_gh_window_left_btn_down)
+            //        {
+            //            if (controller.m_trigger_button_pressed)
+            //            {
+            //                RhinoVrWindowMouseRightBtnDown(isect_gh_window, isect_gh_window_pt);
+            //            }
+            //            else if (controller.m_trigger_button_released)
+            //            {
+            //                RhinoVrWindowMouseRightBtnUp(isect_gh_window, isect_gh_window_pt);
+            //            }
+            //        }
+            //    }
+            //}
         }
 
         return true;
@@ -1501,6 +1532,8 @@ public bool RhinoVrGetIntersectingAppWindow(RhinoVrAppWindow app_window, Transfo
             var screen_pt = eto_window.PointToScreen(new Eto.Drawing.PointF(client_pt.X, client_pt.Y));
             if (screen_pt != Eto.Drawing.PointF.Empty)
             {
+                // TODO: Implement once we can simulate mouse events in Eto.
+
                 //if (SetCursorPos((int)screen_pt.x, (int)screen_pt.y))
                 //{
                 //    INPUT input = { };
@@ -1562,7 +1595,9 @@ public bool RhinoVrGetIntersectingAppWindow(RhinoVrAppWindow app_window, Transfo
         if (eto_window != null)
         {
             var screen_pt = eto_window.PointToScreen(new Eto.Drawing.PointF(client_pt.X, client_pt.Y));
-            
+
+            // TODO: Implement once we can simulate mouse events in Eto.
+
             //INPUT input = { };
             //input.type = INPUT_MOUSE;
             //input.mi.dx = (LONG)((double(screen_pt.x) / screen_width) * 0xFFFF);
@@ -1585,6 +1620,8 @@ public bool RhinoVrGetIntersectingAppWindow(RhinoVrAppWindow app_window, Transfo
         if (eto_window != null)
         {
             var screen_pt = eto_window.PointToScreen(new Eto.Drawing.PointF(client_pt.X, client_pt.Y));
+
+            // TODO: Implement once we can simulate mouse events in Eto.
 
             //if (SetCursorPos((int)screen_pt.x, (int)screen_pt.y))
             //{
@@ -1620,12 +1657,8 @@ public bool RhinoVrGetIntersectingAppWindow(RhinoVrAppWindow app_window, Transfo
     // Draws the left and right eye views and sends the result to the HMD.
     protected bool Draw()
     {
-        DisplayPipelineAttributes vr_dpa = m_view.DisplayPipeline.DisplayPipelineAttributes;
-
-        if (vr_dpa == null)
-            return false;
-
         // TODO: Wrap DeferredDisplayMode()
+
         //var current_display_mode = m_view.DisplayPipeline()->DeferredDisplayMode();
         //if (current_display_mode != m_previous_display_mode)
         //{
@@ -1636,7 +1669,7 @@ public bool RhinoVrGetIntersectingAppWindow(RhinoVrAppWindow app_window, Transfo
 
         //    m_previous_display_mode = current_display_mode;
         //}
-        
+
         bool draw_success = m_vr_dp.DrawStereoFrameBuffer(m_vp_left_eye, m_vp_right_eye, out uint eye_left_handle, out uint eye_right_handle);
         
         if (!draw_success)
@@ -2230,7 +2263,7 @@ public bool RhinoVrGetIntersectingAppWindow(RhinoVrAppWindow app_window, Transfo
     protected double MoveDecelerationHard = 18.0;
 
     protected double m_move_speed; // Movement speed in meters per second
-    protected double m_turn_speed; // Turning speed in degrees per second
+    protected double m_turn_speed = 90.0; // Turning speed in degrees per second
     protected double m_last_frame_time;
     protected Stopwatch m_movement_stopwatch = new Stopwatch();
 
@@ -2255,7 +2288,7 @@ public bool RhinoVrGetIntersectingAppWindow(RhinoVrAppWindow app_window, Transfo
     protected bool m_hmd_location_correction_acquired = false;
 
     // Transform from camera-space to world-space, including movement by controller.
-    protected Transform m_cam_to_world_xform = Transform.Identity;
+    protected Transform m_cam_to_world_xform = Transform.Unset;
 
     // The original viewport from the Rhino view.
     protected ViewportInfo m_vp_orig = null;
@@ -2294,6 +2327,7 @@ public bool RhinoVrGetIntersectingAppWindow(RhinoVrAppWindow app_window, Transfo
 
     // The transforms of all tracked devices.
     protected TrackedDevicePose_t[] m_device_poses = new TrackedDevicePose_t[OpenVR.k_unMaxTrackedDeviceCount];
+    protected TrackedDevicePose_t[] m_game_poses = new TrackedDevicePose_t[0];
 
     protected uint m_device_index_left_hand  = 0; // Device index for left hand controller.
     protected uint m_device_index_right_hand = 0; // Device index for right hand controller.
@@ -2304,8 +2338,8 @@ public bool RhinoVrGetIntersectingAppWindow(RhinoVrAppWindow app_window, Transfo
     // The render models of all tracked devices.
     protected List<RhinoVrDeviceModel> m_device_render_models = new List<RhinoVrDeviceModel>();
 
-    protected RhinoVrAppWindow m_gh_window;
-    protected RhinoVrAppWindow m_rh_window;
+    protected RhinoVrAppWindow m_gh_window = new RhinoVrAppWindow();
+    protected RhinoVrAppWindow m_rh_window = new RhinoVrAppWindow();
 
     protected bool m_tried_launching_gh = false;
     protected bool m_gh_window_left_btn_down = false;

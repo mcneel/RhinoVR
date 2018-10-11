@@ -7,7 +7,7 @@ public class RhinoVrHiddenAreaMeshDisplayConduit : DisplayConduit
 {
     protected override void PreDrawObjects(DrawEventArgs e)
     {
-        if (e.Display.DisplayPipelineAttributes.ShadingEnabled)
+        if (m_draw_hidden_area_mesh && e.Display.DisplayPipelineAttributes.ShadingEnabled)
         {
             var stereo_render_context = e.Display.DisplayPipelineAttributes.StereoRenderContext;
 

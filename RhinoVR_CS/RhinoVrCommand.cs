@@ -86,7 +86,8 @@ namespace RhinoVR_CS
 
             RhinoApp.MainLoop      -= OnMainLoop;
             RhinoDoc.CloseDocument -= OnCloseDocument;
-            
+
+            RhinoVrStruct.m_renderer.Dispose();
             RhinoVrStruct.m_renderer = null;
         }
     }
