@@ -218,8 +218,7 @@ public class RhinoVrRenderer : IDisposable
         {
             if (disposing)
             {
-                // TODO: How do I handle WM_TIMER messages in C#?
-                // We need to kill our custom timer here.
+                RhinoApp.DisableContinuousMainLoop();
 
                 OpenVR.Shutdown();
 
@@ -351,8 +350,10 @@ public class RhinoVrRenderer : IDisposable
             view.Redraw();
         }
 
-        // TODO: How do I handle WM_TIMER messages in C#?
-        // We need to start our custom timer here.
+        if(!RhinoApp.EnableContinuousMainLoop())
+        {
+            RhinoApp.WriteLine("RhinoVR warning: Failed to enable continuous Rhino main loop. RhinoVR performance may suffer.");
+        }
 
         RhinoApp.WriteLine("RhinoVR is ON. Please put on the VR headset.");
 
@@ -391,7 +392,7 @@ public class RhinoVrRenderer : IDisposable
         RhinoTimingStart();
     }
 
-    // Converts an OpenVR matrix to an ON_Xform.
+    // Converts an OpenVR matrix to a Transform.
     protected Transform OpenVrMatrixToRhinoTransform(HmdMatrix34_t matrix)
     {
         Transform transform = new Transform();

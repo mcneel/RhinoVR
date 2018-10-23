@@ -55,9 +55,7 @@ RhinoVrRenderer::RhinoVrRenderer(unsigned int doc_sn, unsigned int view_sn)
 
 RhinoVrRenderer::~RhinoVrRenderer()
 {
-  CWnd* main_window = CWnd::FromHandle(RhinoApp().MainWnd());
-  if (main_window)
-    main_window->KillTimer(2029);
+  RhinoDisableContinuousMainLoop();
 
   m_hmd = nullptr;
   m_render_models = nullptr;
@@ -340,17 +338,10 @@ bool RhinoVrRenderer::Initialize()
 
   m_last_window_update = RhinoGetTimestamp();
 
-  // ATTENTION: The following lines are a (hopefully temporary) hack.
-  // Rhino uses MFC, and MFC has a main message loop which calls
-  // GetMessage(). If there are no messages in the message queue,
-  // GetMessage() will block until it finds a message. This is
-  // unacceptable since we want Rhino/MFC to call into RhinoVR as
-  // quickly and often as possible. To get around this, we start a
-  // timer which will always put a WM_TIMER message in the message
-  // queue if it is empty.
-  CWnd* main_window = CWnd::FromHandle(RhinoApp().MainWnd());
-  if(main_window)
-    main_window->SetTimer(2029, 0, NULL);
+  if (!RhinoEnableContinuousMainLoop())
+  {
+    RhinoApp().Print("RhinoVR warning: Failed to enable continuous Rhino main loop. RhinoVR performance may suffer.\n");
+  }
 
   RhinoApp().Print(L"RhinoVR is ON. Please put on the VR headset.\n");
 
