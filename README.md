@@ -1,14 +1,31 @@
 # RhinoVR
 
-RhinoVR is a Rhino 6 plug-in which uses the HTC Vive or Oculus Rift head-mounted displays to render Rhino viewports in virtual reality. This plug-in was created as a sample to show developers how a VR plug-in can be developed for Rhino 6.
+RhinoVR is a Rhino WIP plug-in which uses the HTC Vive or Oculus Rift head-mounted displays to render Rhino viewports in virtual reality. This plug-in was created as a sample to show developers how a VR plug-in can be developed for Rhino WIP.
+
+![RhinoVR](https://raw.githubusercontent.com/mcneel/RhinoVR/master/images/VillaSavoyeTable.PNG)
+![RhinoVR](https://raw.githubusercontent.com/mcneel/RhinoVR/master/images/GrasshopperColumnArcade.PNG)
+
+## Features
+
+### In Rhino WIP
+* Continuous "gaming mode" inner loop.
+* Direct SDK access to stereo imagery from Rhino.
+* New Rhino SDK tools for selecting and picking from VR controllers.
+
+### In Rhino VR
+* Smooth walkabout style movement including momentum using VR controllers.
+* Support for OpenVR headsets and controllers (HTC Vive, Oculus Rift).
+* Grasshopper canvas display and manipulation inside virtual reality.
+* Picking and selection support.
+* Example commands: Move/Undo, with cancellation support.
 
 ## Requirements
-* HTC Vive or Oculus Rift
+* HTC Vive or Oculus Rift.
 * Steam with the SteamVR app installed.
-* Rhino 6 (Service Release 6)
+* Rhino WIP.
 
 ## Installation
-Make sure you have at least Rhino 6 version 6.9.18241.07111. This means you need Rhino 6 with service release 9, which is currently available as a service release candidate. To enable the downloading of service release candidates, go to Tools -> Options... -> Updates and Statistics -> Update frequency: Service Release Candidate. Then click "Check Now...". Once you have the very latest version of Rhino 6 then proceed to download the RhinoVR RHI file from here (release section) and double click the file to install RhinoVR. The installer should indicate that it has installed RhinoVR for Rhino 6.
+Make sure you have the latest Rhino WIP version (available [here](https://discourse.mcneel.com/t/welcome-to-serengeti/9612)). Rhino WIP requires a Rhino 6 license key to run. Once Rhino WIP is installed then proceed to download the RhinoVR RHI file from here (release section) and double click the file to install RhinoVR. The installer should indicate that it has installed RhinoVR for Rhino WIP.
 
 ## Usage
 Start Rhino and load the file you want to view in VR. Make sure a perspective viewport is selected and that it is set to the display mode you want to use. Type RhinoVR into the command line. This should automatically start Steam and SteamVR. If you're using the Rift, it will also start the Oculus client. Rhino tells you when it is ready and asks you to put the VR headset on.
