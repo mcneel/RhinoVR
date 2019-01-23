@@ -35,7 +35,6 @@
   <ItemGroup>
     <None Include="res\RhinoVR.ico" />
     <None Include="res\RhinoVR.rc2" />
-    <None Include="RhinoVR.def" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="RhinoVR.rc" />

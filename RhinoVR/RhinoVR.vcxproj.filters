@@ -64,9 +64,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="RhinoVR.def">
-      <Filter>Source Files</Filter>
-    </None>
     <None Include="res\RhinoVR.rc2">
       <Filter>Resource Files</Filter>
     </None>
