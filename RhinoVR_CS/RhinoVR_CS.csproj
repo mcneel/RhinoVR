@@ -39,17 +39,17 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="RhinoCommon">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>C:\Dev\mcneel\rhino-6.x\src4\bin\Debug\rhinocommon.dll</HintPath>
+      <HintPath>C:\Program Files\Rhino WIP\System\rhinocommon.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Eto">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>C:\Dev\mcneel\rhino-6.x\src4\bin\Debug\Eto.dll</HintPath>
+      <HintPath>C:\Program Files\Rhino WIP\System\Eto.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Rhino.UI">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>C:\Dev\mcneel\rhino-6.x\src4\bin\Debug\Rhino.UI.dll</HintPath>
+      <HintPath>C:\Program Files\Rhino WIP\System\Rhino.UI.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
@@ -86,7 +86,7 @@ Copy /Y "$(SolutionDir)OpenVR\LICENSE" "$(TargetDir)LICENSE"</PostBuildEvent>
     <FallbackCulture>en-US</FallbackCulture>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
-    <StartProgram>C:\Dev\mcneel\rhino-6.x\src4\bin\Debug\Rhino.exe</StartProgram>
+    <StartProgram>C:\Program Files\Rhino WIP\System\Rhino.exe</StartProgram>
     <StartArguments>
     </StartArguments>
     <StartAction>Program</StartAction>
