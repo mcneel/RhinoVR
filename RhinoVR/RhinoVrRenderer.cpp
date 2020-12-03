@@ -237,7 +237,8 @@ bool RhinoVrRenderer::Initialize()
   if (rhino_doc == nullptr)
     return false;
   
-  m_unit_scale = rhino_doc->ModelUnits().MetersPerUnit();
+  m_unit_scale = rhino_doc->ModelUnits().MetersPerUnit(ON_DBL_QNAN);
+  m_unit_scale = 1.0 / m_unit_scale;
   m_pointer_line = ON_Line(m_unit_scale*ON_3dPoint(0, 0, -0.02), m_unit_scale*ON_3dPoint(0, 0, -250.0));
 
   m_pointer_mesh = CreatePointerLineMesh(m_pointer_line, m_unit_scale);
