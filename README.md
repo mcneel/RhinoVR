@@ -1,13 +1,13 @@
 # RhinoVR
 
-RhinoVR is a Rhino WIP plug-in which uses the HTC Vive or Oculus Rift head-mounted displays to render Rhino viewports in virtual reality. This plug-in was created as a sample to show developers how a VR plug-in can be developed for Rhino WIP.
+RhinoVR is a Rhino 7 plug-in which uses the HTC Vive or Oculus Rift head-mounted displays to render Rhino viewports in virtual reality. This plug-in was created as a sample to show developers how a VR plug-in can be developed for Rhino 7.
 
 ![RhinoVR](https://raw.githubusercontent.com/mcneel/RhinoVR/master/images/VillaSavoyeTable.PNG)
 ![RhinoVR](https://raw.githubusercontent.com/mcneel/RhinoVR/master/images/GrasshopperColumnArcade.PNG)
 
 ## Features
 
-### In Rhino WIP
+### In Rhino 7
 * Continuous "gaming mode" inner loop.
 * Direct SDK access to stereo imagery from Rhino.
 * New Rhino SDK tools for selecting and picking from VR controllers.
@@ -25,7 +25,7 @@ RhinoVR is a Rhino WIP plug-in which uses the HTC Vive or Oculus Rift head-mount
 * Rhino WIP.
 
 ## Installation
-Make sure you have the latest Rhino WIP version (available [here](https://discourse.mcneel.com/t/welcome-to-serengeti/9612)). Rhino WIP requires a Rhino 6 license key to run. Once Rhino WIP is installed then proceed to download the RhinoVR RHI file from here (release section) and double click the file to install RhinoVR. The installer should indicate that it has installed RhinoVR for Rhino WIP.
+Make sure you have Rhino 7 Service Release 2 installed or later. You can download the RhinoVR RHI file from here (release section) and double click the file to install RhinoVR. The installer should indicate that it has installed RhinoVR for Rhino 7.
 
 ## Usage
 Start Rhino and load the file you want to view in VR. Make sure a perspective viewport is selected and that it is set to the display mode you want to use. Type RhinoVR into the command line. This should automatically start Steam and SteamVR. If you're using the Rift, it will also start the Oculus client. Rhino tells you when it is ready and asks you to put the VR headset on.
