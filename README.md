@@ -22,10 +22,10 @@ RhinoVR is a Rhino 7 plug-in which uses the HTC Vive or Oculus Rift head-mounted
 ## Requirements
 * HTC Vive or Oculus Rift.
 * Steam with the SteamVR app installed.
-* Rhino WIP.
+* Rhino 7 Service Release 2.
 
 ## Installation
-Make sure you have Rhino 7 Service Release 2 installed or later. You can download the RhinoVR RHI file from here (release section) and double click the file to install RhinoVR. The installer should indicate that it has installed RhinoVR for Rhino 7.
+Make sure you have Rhino 7 Service Release 2 installed or later. You can download the RhinoVR .rhp file from this page's Releases section, and then drag-and-drop the file over the Rhino window to load RhinoVR.
 
 ## Usage
 Start Rhino and load the file you want to view in VR. Make sure a perspective viewport is selected and that it is set to the display mode you want to use. Type RhinoVR into the command line. This should automatically start Steam and SteamVR. If you're using the Rift, it will also start the Oculus client. Rhino tells you when it is ready and asks you to put the VR headset on.
