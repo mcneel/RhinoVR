@@ -2041,9 +2041,9 @@ bool RhinoVrDeviceModel::Initialize(
     triangle.vi[3] = triangle.vi[2];
   }
 
-  CRhinoDib texture_dib(diffuse_texture.unWidth, diffuse_texture.unHeight, 32);
+  auto texture_dib = std::make_shared<CRhinoDib>(diffuse_texture.unWidth, diffuse_texture.unHeight, 32);
 
-  texture_dib.ProcessPixels_SingleThreaded(
+  texture_dib->ProcessPixels_SingleThreaded(
     [](CRhinoDib::Pixel& pixel, void* pvData)
     {
       const vr::RenderModel_TextureMap_t* texdata = (const vr::RenderModel_TextureMap_t*)pvData;
@@ -2060,7 +2060,7 @@ bool RhinoVrDeviceModel::Initialize(
     (void*)&diffuse_texture );
 
   
-  CRhRdkTexture* rdk_texture = ::RhRdkNewDibTexture(&texture_dib, &doc);
+  CRhRdkTexture* rdk_texture = ::RhRdkNewDibTexture(texture_dib, &doc);
 
   CRhRdkBasicMaterial* rdk_material = new CRhRdkBasicMaterial();
   rdk_material->Initialize();
